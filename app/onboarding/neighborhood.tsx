@@ -1,0 +1,200 @@
+import { useState, useEffect } from "react";
+import {
+  View, Text, StyleSheet, ActivityIndicator, Alert,
+  TextInput, TouchableOpacity, FlatList,
+} from "react-native";
+import * as Location from "expo-location";
+import { router } from "expo-router";
+import { supabase } from "../../lib/supabase";
+import { T } from "../../lib/theme";
+
+type Neighborhood = { id: string; name: string; municipality_id: string };
+
+export default function OnboardingNeighborhood() {
+  const [detecting, setDetecting] = useState(true);
+  const [detectedNeighborhood, setDetectedNeighborhood] = useState<Neighborhood | null>(null);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<Neighborhood[]>([]);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    detectLocation();
+  }, []);
+
+  async function detectLocation() {
+    setDetecting(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setDetecting(false);
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude: lat, longitude: lng } = loc.coords;
+      setCoords({ lat, lng });
+
+      // Reverse geocode via Nominatim to get area name
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        { headers: { "User-Agent": "TownhallCafe/1.0" } }
+      );
+      const geo = await geoRes.json();
+      const suburb = geo.address?.suburb || geo.address?.neighbourhood || geo.address?.village;
+
+      // Look up in Supabase cities table
+      const { data: cities } = await supabase
+        .from("cities")
+        .select("id, name")
+        .ilike("name", `%${geo.address?.city || geo.address?.town || ""}%`)
+        .limit(1);
+
+      if (cities && cities.length > 0) {
+        const { data: hoods } = await supabase
+          .from("neighborhoods")
+          .select("id, name, municipality_id")
+          .eq("municipality_id", cities[0].id)
+          .limit(10);
+
+        if (hoods && hoods.length > 0) {
+          // Match suburb name if possible
+          const match = suburb
+            ? hoods.find(h => h.name.toLowerCase().includes(suburb.toLowerCase())) || hoods[0]
+            : hoods[0];
+          setDetectedNeighborhood(match);
+        }
+      }
+    } catch {
+      // silent — user can search manually
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  async function searchNeighborhoods(q: string) {
+    setSearch(q);
+    if (q.length < 2) { setResults([]); return; }
+    const { data } = await supabase
+      .from("neighborhoods")
+      .select("id, name, municipality_id")
+      .ilike("name", `%${q}%`)
+      .limit(8);
+    setResults(data || []);
+  }
+
+  async function selectNeighborhood(hood: Neighborhood) {
+    setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.from("profiles").update({
+      neighborhood_id: hood.id,
+      neighborhood: hood.name,
+    }).eq("id", user.id);
+
+    setSaving(false);
+    // Pass coords to next step for ZK proof
+    router.push({
+      pathname: "/onboarding/zk-proof",
+      params: {
+        neighborhoodId: hood.id,
+        neighborhoodName: hood.name,
+        municipalityId: hood.municipality_id,
+        lat: coords?.lat?.toString() ?? "",
+        lng: coords?.lng?.toString() ?? "",
+      },
+    });
+  }
+
+  return (
+    <View style={s.root}>
+      <Text style={s.title}>Your neighborhood</Text>
+      <Text style={s.sub}>
+        We'll use your location to place you in the right civic community.
+      </Text>
+
+      {detecting ? (
+        <View style={s.detecting}>
+          <ActivityIndicator color={T.amber} />
+          <Text style={s.detectingText}>Detecting your location…</Text>
+        </View>
+      ) : detectedNeighborhood ? (
+        <View style={s.detected}>
+          <Text style={s.detectLabel}>Detected neighborhood</Text>
+          <Text style={s.detectName}>{detectedNeighborhood.name}</Text>
+          <View style={s.detectActions}>
+            <TouchableOpacity
+              style={s.btnPrimary}
+              onPress={() => selectNeighborhood(detectedNeighborhood)}
+              disabled={saving}
+            >
+              {saving
+                ? <ActivityIndicator color={T.bg} />
+                : <Text style={s.btnPrimaryText}>Yes, that's me</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.btnSecondary}
+              onPress={() => setDetectedNeighborhood(null)}
+            >
+              <Text style={s.btnSecondaryText}>Search instead</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={s.searchWrap}>
+          <TextInput
+            style={s.input}
+            value={search}
+            onChangeText={searchNeighborhoods}
+            placeholder="Search for your neighborhood or municipality…"
+            placeholderTextColor={T.creamFaint}
+            autoFocus
+          />
+          <FlatList
+            data={results}
+            keyExtractor={i => i.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={s.resultRow}
+                onPress={() => selectNeighborhood(item)}
+              >
+                <Text style={s.resultName}>{item.name}</Text>
+              </TouchableOpacity>
+            )}
+            style={{ marginTop: 8 }}
+          />
+          {results.length === 0 && search.length >= 2 && (
+            <Text style={s.noResults}>No neighborhoods found. Try a municipality name.</Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, padding: 28, paddingTop: 32, backgroundColor: T.bg },
+  title: { color: T.cream, fontSize: 24, fontWeight: "600", marginBottom: 10 },
+  sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 28 },
+  detecting: { flexDirection: "row", alignItems: "center", gap: 12, padding: 20 },
+  detectingText: { color: T.creamDim, fontSize: 14 },
+  detected: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14, padding: 20 },
+  detectLabel: { color: T.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  detectName: { color: T.cream, fontSize: 22, fontWeight: "600", marginBottom: 20 },
+  detectActions: { gap: 10 },
+  btnPrimary: { backgroundColor: T.amber, borderRadius: 10, padding: 14, alignItems: "center" },
+  btnPrimaryText: { color: T.bg, fontSize: 15, fontWeight: "600" },
+  btnSecondary: { padding: 14, alignItems: "center" },
+  btnSecondaryText: { color: T.amberHi, fontSize: 14 },
+  searchWrap: { flex: 1 },
+  input: {
+    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
+    borderRadius: 10, padding: 14, color: T.cream, fontSize: 15,
+  },
+  resultRow: {
+    padding: 16, borderBottomWidth: 1, borderBottomColor: T.border,
+  },
+  resultName: { color: T.cream, fontSize: 15 },
+  noResults: { color: T.creamDim, fontSize: 13, marginTop: 16, textAlign: "center" },
+});
