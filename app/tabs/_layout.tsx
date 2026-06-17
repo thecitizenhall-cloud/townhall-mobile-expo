@@ -1,8 +1,8 @@
 import { Tabs } from "expo-router";
+import { View, Text } from "react-native";
 import { T } from "../../lib/theme";
 
 function TabIcon({ focused, char }: { focused: boolean; char: string }) {
-  const { Text, View } = require("react-native");
   return (
     <View style={{ alignItems: "center" }}>
       <Text style={{ fontSize: 18, color: focused ? T.amberHi : T.creamFaint }}>
