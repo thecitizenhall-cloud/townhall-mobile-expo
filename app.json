@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "townhallcafe",
     "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
     "backgroundColor": "#0F0E0C",
     "splash": {
       "image": "./assets/splash.png",

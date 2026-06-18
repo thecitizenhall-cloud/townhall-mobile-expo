@@ -10,6 +10,10 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
+      "ios": { "resourceClass": "m-medium" }
+    },
+    "preview-simulator": {
+      "extends": "preview",
       "ios": { "simulator": true }
     },
     "production": {
