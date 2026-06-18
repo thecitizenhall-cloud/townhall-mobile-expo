@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Pressable,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getWeeklyActivity, WeeklyActivity } from "../../lib/concernCards";
 import { T } from "../../lib/theme";
@@ -58,7 +58,14 @@ export default function YourIssuesScreen() {
   const [concernCards, setConcernCards] = useState<any[]>([]);
   const [cardsAreFallback, setCardsAreFallback] = useState(false);
 
-  useEffect(() => { load(); }, []);
+  // Reload on focus so follows/votes made elsewhere show without a manual pull.
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      load(focusedOnce.current);
+      focusedOnce.current = true;
+    }, [])
+  );
 
   async function load(refresh = false) {
     if (refresh) setRefreshing(true); else setLoading(true);

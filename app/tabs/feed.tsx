@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
   TouchableOpacity, Pressable, TextInput, Alert, ScrollView,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
@@ -77,7 +77,16 @@ export default function FeedScreen() {
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }
 
-  useEffect(() => { loadFeed(); /* eslint-disable-next-line */ }, []);
+  // Reload on every focus (expo-router keeps tab screens mounted, so a one-shot
+  // useEffect would leave stale data after writes on other screens). First focus
+  // shows the full loading state; later focuses refresh quietly.
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      loadFeed(focusedOnce.current);
+      focusedOnce.current = true;
+    }, [])
+  );
 
   // Realtime new posts.
   useEffect(() => {
@@ -160,11 +169,12 @@ export default function FeedScreen() {
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
-      await supabase.from("card_watches").delete().eq("user_id", currentUser.id).eq("concern_card_id", cardId);
-      setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
+      const { error } = await supabase.from("card_watches").delete().eq("user_id", currentUser.id).eq("concern_card_id", cardId);
+      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
     } else {
-      await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: profile?.neighborhood_id || "unknown" });
-      setWatchedIds((prev) => new Set([...prev, cardId]));
+      const { error } = await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: profile?.neighborhood_id || "unknown" });
+      if (!error) setWatchedIds((prev) => new Set([...prev, cardId]));
+      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
     }
     setWatchLoading(null);
   }
@@ -174,11 +184,12 @@ export default function FeedScreen() {
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {
-      await supabase.from("watched_concern_cards").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-      setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
+      const { error } = await supabase.from("watched_concern_cards").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
+      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
     } else {
-      await supabase.from("watched_concern_cards").insert({ user_id: currentUser.id, issue_id: issueId, notify_on_move: true });
-      setWatchedIds((prev) => new Set([...prev, issueId]));
+      const { error } = await supabase.from("watched_concern_cards").insert({ user_id: currentUser.id, issue_id: issueId, notify_on_move: true });
+      if (!error) setWatchedIds((prev) => new Set([...prev, issueId]));
+      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
     }
     setWatchLoading(null);
   }

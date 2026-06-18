@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image, Alert,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -167,8 +167,16 @@ export default function ConcernCardDetail() {
     // Following is a standing action — guests must verify first.
     if (!user || !verified) { goVerify(); return; }
     setWatching(true);
-    if (watched) { await unwatchConcernCard(user.id, id); setWatched(false); }
-    else { await watchConcernCard(user.id, id, card?.municipality_id); setWatched(true); }
+    // Only flip the button if the write actually succeeded — RLS can reject it
+    // (standing gate), and an optimistic flip would hide that failure.
+    if (watched) {
+      const { success } = await unwatchConcernCard(user.id, id);
+      if (success) setWatched(false);
+    } else {
+      const { success, error } = await watchConcernCard(user.id, id, card?.municipality_id);
+      if (success) setWatched(true);
+      else if (error) Alert.alert("Couldn't follow", error);
+    }
     setWatching(false);
   }
 

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable,
   TextInput, Alert, ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
@@ -45,7 +45,8 @@ export default function ProfileScreen() {
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({ round_trip_closed: true, meeting_imminent: true, watched_item_moved: true });
   const [prefsStatus, setPrefsStatus] = useState<"" | "saving" | "saved" | "error">("");
 
-  useEffect(() => { load(); }, []);
+  // Reload on focus so activity/standing reflect actions taken on other tabs.
+  useFocusEffect(useCallback(() => { load(); }, []));
 
   async function load() {
     try {
