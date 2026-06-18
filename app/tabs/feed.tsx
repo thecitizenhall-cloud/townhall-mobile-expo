@@ -100,7 +100,10 @@ export default function FeedScreen() {
         setPosts((prev) => prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p)));
       })
       .subscribe();
-    return () => { channel.unsubscribe(); };
+    // removeChannel (not unsubscribe) so the named channel is fully torn down —
+    // otherwise a re-mount reuses the still-subscribed instance and adding .on()
+    // again throws "cannot add callbacks after subscribe()".
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   async function loadFeed(refresh = false) {
