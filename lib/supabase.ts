@@ -26,18 +26,49 @@ export type Profile = {
   posting_suspended_until: string | null;
 };
 
+// Mirrors the live concern_cards columns the web app reads (summary / source_quote
+// / meeting_date / affected_area / impact_type), with the older guessed names kept
+// optional so nothing that referenced them breaks.
 export type ConcernCard = {
   id: string;
   title: string;
-  body: string;
-  source_label: string | null;
+  summary: string | null;
+  source_quote: string | null;
   source_url: string | null;
-  quote: string | null;
   outcome_signal: string | null;
+  impact_type: string | null;
+  affected_area: string | null;
+  meeting_date: string | null;
+  next_action_date: string | null;
   created_at: string;
   municipality_id: string;
-  scope: string | null;
-  is_bot_post: boolean;
+  official_response?: string | null;
+  // legacy/optional
+  body?: string | null;
+  quote?: string | null;
+  source_label?: string | null;
+  scope?: string | null;
+  is_bot_post?: boolean;
+};
+
+// Unified item shape returned by the web app's /api/civic-feed route. The route
+// aggregates the civic engine's concern cards plus SeeClickFix, township agendas,
+// township news bulletins, and NOAA alerts — so the mobile feed reuses the exact
+// same source list and relevance logic as the web feed instead of re-querying.
+export type CivicItem = {
+  source: "civic_engine" | "seeclickfix" | "township" | "township_news" | "noaa";
+  external_id: string;
+  concern_card_id?: string;
+  tag: string;
+  title: string;
+  body: string;
+  url: string | null;
+  address: string | null;
+  created_at: string;
+  image_url: string | null;
+  outcome_signal?: string | null;
+  impact_type?: string | null;
+  relevance_score?: number;
 };
 
 export type CivicIssue = {

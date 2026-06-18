@@ -148,9 +148,13 @@ export default function OnboardingZKProof() {
           }}>
             <Text style={s.btnText}>Try again</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.btnSkip} onPress={() => router.push("/onboarding/welcome")}>
-            <Text style={s.btnSkipText}>Skip for now</Text>
+          <TouchableOpacity style={s.btnSkip} onPress={() => router.replace("/onboarding/welcome")}>
+            <Text style={s.btnSkipText}>Read without verifying</Text>
           </TouchableOpacity>
+          <Text style={s.skipNote}>
+            You can read your neighborhood feed now. Following issues, sharing a
+            stake, and voting need a verified residency — you can do that anytime.
+          </Text>
         </>
       )}
     </View>
@@ -173,4 +177,5 @@ const s = StyleSheet.create({
   btnText: { color: T.bg, fontSize: 15, fontWeight: "600" },
   btnSkip: { padding: 16, alignItems: "center" },
   btnSkipText: { color: T.creamDim, fontSize: 14 },
+  skipNote: { color: T.creamFaint, fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 8 },
 });

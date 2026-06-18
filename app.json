@@ -18,7 +18,8 @@
       "bundleIdentifier": "org.townhallcafe.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Townhall uses your location to verify your neighborhood residency via a zero-knowledge proof. Your exact coordinates never leave your device.",
-        "NSLocationAlwaysUsageDescription": "Townhall uses your location to verify your neighborhood residency via a zero-knowledge proof. Your exact coordinates never leave your device."
+        "NSLocationAlwaysUsageDescription": "Townhall uses your location to verify your neighborhood residency via a zero-knowledge proof. Your exact coordinates never leave your device.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

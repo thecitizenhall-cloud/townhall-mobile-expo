@@ -1,87 +1,147 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  View, Text, StyleSheet, FlatList, RefreshControl,
-  ActivityIndicator, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Pressable,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { getWeeklyActivity, WeeklyActivity } from "../../lib/concernCards";
 import { T } from "../../lib/theme";
 import ConcernCardItem from "../../components/ConcernCardItem";
 
-type WatchedCard = { id: string; concern_card_id: string; watched_at: string; card: any };
-type WatchedIssue = { id: string; civic_issue_id: string; watched_at: string; issue: any };
+const STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
+  open: { bg: T.blueLo, color: T.blueHi, label: "Open" },
+  escalated: { bg: T.amberLo, color: T.amberHi, label: "Escalated" },
+  expert: { bg: T.purpleLo, color: T.purpleHi, label: "Expert review" },
+  resolved: { bg: "#1A2A1A", color: T.tealHi, label: "Resolved" },
+};
+
+// A single issue row, reused across the "following", "since last visit", and
+// "neighborhood" sections. `highlight` draws the amber since-last-visit border.
+function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highlight?: boolean; updated?: boolean; onPress: () => void }) {
+  const sm = STATUS_META[issue.status] || STATUS_META.open;
+  return (
+    <Pressable style={[s.issue, highlight && s.issueHighlight]} onPress={onPress}>
+      <Text style={s.issueTitle}>{issue.title}</Text>
+      <View style={s.issueRow}>
+        <Text style={[s.statusPill, { backgroundColor: sm.bg, color: sm.color, borderColor: sm.color }]}>{sm.label}</Text>
+        {updated ? (
+          <Text style={s.updated}>Updated</Text>
+        ) : (
+          <Text style={s.voteMeta}>{issue.voice_count || 0} vote{(issue.voice_count || 0) === 1 ? "" : "s"} from verified residents</Text>
+        )}
+      </View>
+      {issue.official_response ? (
+        <View style={s.responseInd}>
+          <Text style={s.responseIndText}>✓ Official response received</Text>
+        </View>
+      ) : (
+        <View style={s.noResponse}>
+          <View style={s.pulse} />
+          <Text style={s.noResponseText}>Awaiting official response</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
 
 export default function YourIssuesScreen() {
-  const [watchedCards, setWatchedCards] = useState<WatchedCard[]>([]);
-  const [watchedIssues, setWatchedIssues] = useState<WatchedIssue[]>([]);
-  const [lastSession, setLastSession] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { loadIssues(); }, []);
+  const [myPosts, setMyPosts] = useState<any[]>([]);
+  const [myVotes, setMyVotes] = useState<any[]>([]);
+  const [neighborhoodIssues, setNeighborhoodIssues] = useState<any[]>([]);
+  const [watchedIssues, setWatchedIssues] = useState<any[]>([]);
+  const [sinceLastVisit, setSinceLastVisit] = useState<any[]>([]);
+  const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity | null>(null);
+  const [concernCards, setConcernCards] = useState<any[]>([]);
+  const [cardsAreFallback, setCardsAreFallback] = useState(false);
 
-  async function loadIssues(refresh = false) {
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
+  useEffect(() => { load(); }, []);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  async function load(refresh = false) {
+    if (refresh) setRefreshing(true); else setLoading(true);
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) { setLoading(false); setRefreshing(false); return; }
+      setUser(u);
 
-    const { data: p } = await supabase
-      .from("profiles")
-      .select("last_session_at")
-      .eq("id", user.id)
-      .single();
-    setLastSession(p?.last_session_at ?? null);
+      const { data: posts } = await supabase.from("posts")
+        .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct)")
+        .eq("author_id", u.id).order("created_at", { ascending: false }).limit(50);
+      setMyPosts(posts || []);
 
-    // Watched concern cards
-    const { data: cw } = await supabase
-      .from("card_watches")
-      .select("id, concern_card_id, watched_at, concern_cards(*)")
-      .eq("user_id", user.id)
-      .order("watched_at", { ascending: false });
+      const { data: votes } = await supabase.from("votes")
+        .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct, source_label, created_at, updated_at)")
+        .eq("user_id", u.id).order("created_at", { ascending: false }).limit(50);
+      setMyVotes(votes || []);
 
-    // Watched civic issues
-    const { data: iw } = await supabase
-      .from("watched_concern_cards")
-      .select("id, civic_issue_id, watched_at, civic_issues(*)")
-      .eq("user_id", user.id)
-      .order("watched_at", { ascending: false });
+      const { data: prof } = await supabase.from("profiles")
+        .select("neighborhood_id, previous_session_at").eq("id", u.id).maybeSingle();
 
-    setWatchedCards(
-      (cw || []).map(w => ({ ...w, card: (w as any).concern_cards }))
-    );
-    setWatchedIssues(
-      (iw || []).map(w => ({ ...w, issue: (w as any).civic_issues }))
-    );
+      if (prof?.neighborhood_id) {
+        const { data: nbhdIssues } = await supabase.from("civic_issues")
+          .select("*").eq("neighborhood_id", prof.neighborhood_id).order("voice_count", { ascending: false }).limit(5);
+        setNeighborhoodIssues(nbhdIssues || []);
+      }
 
-    // Update last_session_at
-    await supabase.from("profiles")
-      .update({ last_session_at: new Date().toISOString() })
-      .eq("id", user.id);
+      const { data: watched } = await supabase.from("watched_concern_cards")
+        .select("*, civic_issues(*)").eq("user_id", u.id).not("issue_id", "is", null).order("watched_at", { ascending: false });
+      setWatchedIssues((watched || []).map((w: any) => w.civic_issues).filter(Boolean));
 
-    setLoading(false);
-    setRefreshing(false);
+      // Watched concern cards — two-step to avoid RLS join issues.
+      const { data: cardWatches } = await supabase.from("card_watches")
+        .select("concern_card_id, created_at").eq("user_id", u.id).order("created_at", { ascending: false });
+      let watchedCardData: any[] = [];
+      if (cardWatches?.length) {
+        const { data: cards } = await supabase.from("concern_cards")
+          .select("*").in("id", cardWatches.map((w: any) => w.concern_card_id)).eq("archived", false);
+        watchedCardData = cards || [];
+        if (watchedCardData.length) { setConcernCards(watchedCardData); setCardsAreFallback(false); }
+      }
+      if (prof?.neighborhood_id && !watchedCardData.length) {
+        const { data: hoodData } = await supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle();
+        if (hoodData?.slug) {
+          const { data: scored } = await supabase.from("neighborhood_scores")
+            .select("relevance_score, concern_cards(*)").eq("neighborhood_id", hoodData.slug)
+            .eq("concern_cards.surfaces_to_feed", true).eq("concern_cards.archived", false)
+            .order("relevance_score", { ascending: false }).limit(5);
+          const topCards = (scored || []).map((ns: any) => ns.concern_cards).filter(Boolean);
+          if (topCards.length) { setConcernCards(topCards); setCardsAreFallback(true); }
+        }
+      }
+
+      setWeeklyActivity(await getWeeklyActivity(u.id));
+
+      // Since-last-visit changes, diffed against previous_session_at.
+      const watchedIssueIds = (watched || []).map((w: any) => w.issue_id).filter(Boolean);
+      if (prof?.previous_session_at && watchedIssueIds.length) {
+        const { data: changed } = await supabase.from("civic_issues")
+          .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds);
+        setSinceLastVisit(changed || []);
+      }
+    } catch (e) {
+      console.error("YourIssues load error:", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
-  const onRefresh = useCallback(() => loadIssues(true), []);
+  const onRefresh = useCallback(() => load(true), []);
+  const openIssue = (id: string) => router.push({ pathname: "/issue/[id]", params: { id } });
+  const openCard = (id: string) => router.push({ pathname: "/card/[id]", params: { id } });
 
-  function isNew(item: { watched_at: string; data?: any }) {
-    if (!lastSession) return false;
-    const itemDate = item.watched_at || item.data?.updated_at;
-    if (!itemDate) return false;
-    return new Date(itemDate) > new Date(lastSession);
-  }
+  const myEscalated = myPosts.filter((p) => p.escalated && p.civic_issues);
+  const hasAnything =
+    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0;
+  const wa = weeklyActivity;
+  const showActivity = wa && (wa.cardsRead > 0 || wa.votesCast > 0 || wa.itemsWatched > 0 || wa.responsesReceived > 0);
 
   if (loading) {
-    return (
-      <View style={[s.root, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator color={T.amber} />
-      </View>
-    );
+    return <View style={[s.root, s.center]}><ActivityIndicator color={T.amber} /></View>;
   }
-
-  const hasAny = watchedCards.length > 0 || watchedIssues.length > 0;
 
   return (
     <FlatList
@@ -89,64 +149,83 @@ export default function YourIssuesScreen() {
       contentContainerStyle={s.content}
       data={[]}
       renderItem={null}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />
-      }
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
       ListHeaderComponent={
-        <>
+        <View>
           <Text style={s.title}>Your Issues</Text>
           <Text style={s.sub}>Everything you're following, across all levels.</Text>
 
-          {!hasAny && (
-            <View style={s.empty}>
-              <Text style={s.emptyText}>
-                You're not following anything yet.{"\n"}Go to the Town feed and tap a card to start.
-              </Text>
+          {!hasAnything ? (
+            <View>
+              {neighborhoodIssues.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>Happening in your neighborhood</Text>
+                  {neighborhoodIssues.map((iss) => <IssueRow key={iss.id} issue={iss} onPress={() => openIssue(iss.id)} />)}
+                </>
+              )}
+              <View style={s.empty}>
+                <Text style={s.emptyIcon}>🏛</Text>
+                <Text style={s.emptyText}>
+                  My civic record starts here — votes, issues I've raised, and official responses appear on this screen.
+                </Text>
+                <Text style={s.emptySub}>
+                  Council items you can follow are waiting in your Town feed. Follow an item and you'll be notified when it moves.
+                </Text>
+              </View>
             </View>
-          )}
-
-          {watchedCards.length > 0 && (
+          ) : (
             <>
-              <Text style={s.sectionLabel}>Concern cards</Text>
-              {watchedCards.map(w => (
-                <View key={w.id} style={[s.itemWrap, isNew(w) && s.newItem]}>
-                  {isNew(w) && <Text style={s.newTag}>New</Text>}
-                  {w.card && (
-                    <ConcernCardItem
-                      card={w.card}
-                      onPress={() =>
-                        router.push({ pathname: "/card/[id]", params: { id: w.concern_card_id } })
-                      }
-                    />
-                  )}
+              {showActivity && (
+                <View style={s.activity}>
+                  <Text style={s.activityHead}>This week</Text>
+                  <View style={s.activityRow}>
+                    {wa!.cardsRead > 0 && <Text style={s.activityStat}>{wa!.cardsRead} card{wa!.cardsRead !== 1 ? "s" : ""} read</Text>}
+                    {wa!.itemsWatched > 0 && <Text style={s.activityStat}>{wa!.itemsWatched} item{wa!.itemsWatched !== 1 ? "s" : ""} followed</Text>}
+                    {wa!.votesCast > 0 && <Text style={s.activityStat}>{wa!.votesCast} vote{wa!.votesCast !== 1 ? "s" : ""} cast</Text>}
+                    {wa!.responsesReceived > 0 && <Text style={[s.activityStat, { color: T.tealHi }]}>{wa!.responsesReceived} response{wa!.responsesReceived !== 1 ? "s" : ""} received</Text>}
+                  </View>
                 </View>
-              ))}
-            </>
-          )}
+              )}
 
-          {watchedIssues.length > 0 && (
-            <>
-              <Text style={[s.sectionLabel, { marginTop: 24 }]}>Civic issues</Text>
-              {watchedIssues.map(w => (
-                <TouchableOpacity
-                  key={w.id}
-                  style={[s.issueCard, isNew(w) && s.newItem]}
-                  onPress={() =>
-                    router.push({ pathname: "/issue/[id]", params: { id: w.civic_issue_id } })
-                  }
-                >
-                  {isNew(w) && <Text style={s.newTag}>New</Text>}
-                  {w.issue && (
-                    <>
-                      <Text style={s.issueBadge}>{w.issue.status?.toUpperCase()}</Text>
-                      <Text style={s.issueTitle}>{w.issue.title}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              ))}
+              {sinceLastVisit.length > 0 && (
+                <>
+                  <Text style={[s.sectionLabel, { color: T.amberHi }]}>New since your last visit</Text>
+                  {sinceLastVisit.map((iss) => <IssueRow key={iss.id} issue={iss} highlight updated onPress={() => openIssue(iss.id)} />)}
+                </>
+              )}
+
+              {concernCards.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>{cardsAreFallback ? "Relevant in your neighborhood" : "Following from council"}</Text>
+                  {concernCards.map((card) => (
+                    <ConcernCardItem key={card.id} card={card} onPress={() => openCard(card.id)} />
+                  ))}
+                </>
+              )}
+
+              {watchedIssues.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>Following · {watchedIssues.length}</Text>
+                  {watchedIssues.map((iss) => <IssueRow key={iss.id} issue={iss} onPress={() => openIssue(iss.id)} />)}
+                </>
+              )}
+
+              {myVotes.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>Issues you prioritized · {myVotes.length}</Text>
+                  {myVotes.map((v) => v.civic_issues ? <IssueRow key={v.id} issue={v.civic_issues} onPress={() => openIssue(v.civic_issues.id)} /> : null)}
+                </>
+              )}
+
+              {myEscalated.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>Issues you raised · {myEscalated.length}</Text>
+                  {myEscalated.map((p) => <IssueRow key={p.id} issue={p.civic_issues} onPress={() => openIssue(p.civic_issues.id)} />)}
+                </>
+              )}
             </>
           )}
-        </>
+        </View>
       }
     />
   );
@@ -154,28 +233,32 @@ export default function YourIssuesScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
+  center: { justifyContent: "center", alignItems: "center" },
   content: { padding: 16, paddingBottom: 40 },
   title: { color: T.cream, fontSize: 22, fontWeight: "600", marginBottom: 4 },
-  sub: { color: T.creamDim, fontSize: 13, marginBottom: 24 },
-  sectionLabel: {
-    color: T.amberHi, fontSize: 11, fontWeight: "600",
-    textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 10,
-  },
-  itemWrap: { marginBottom: 2 },
-  newItem: { borderLeftWidth: 3, borderLeftColor: T.amber, borderRadius: 2, paddingLeft: 4 },
-  newTag: {
-    color: T.amberHi, fontSize: 10, fontWeight: "700",
-    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4,
-  },
-  issueCard: {
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: 12, padding: 16, marginBottom: 10,
-  },
-  issueBadge: {
-    color: T.teal, fontSize: 10, fontWeight: "600",
-    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6,
-  },
-  issueTitle: { color: T.cream, fontSize: 15, fontWeight: "500" },
-  empty: { paddingVertical: 48, alignItems: "center" },
-  emptyText: { color: T.creamDim, fontSize: 14, textAlign: "center", lineHeight: 22 },
+  sub: { color: T.creamDim, fontSize: 13, marginBottom: 20 },
+  sectionLabel: { color: T.amberHi, fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.9, marginTop: 18, marginBottom: 10 },
+
+  activity: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.border, marginBottom: 4 },
+  activityHead: { fontSize: 10, color: T.creamFaint, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  activityRow: { flexDirection: "row", gap: 16, flexWrap: "wrap" },
+  activityStat: { fontSize: 12, color: T.creamDim },
+
+  issue: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 12, padding: 14, marginBottom: 10 },
+  issueHighlight: { borderLeftWidth: 3, borderLeftColor: T.amber },
+  issueTitle: { color: T.cream, fontSize: 15, fontWeight: "500", lineHeight: 21 },
+  issueRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" },
+  statusPill: { paddingHorizontal: 9, paddingVertical: 2, borderRadius: 99, fontSize: 10, fontWeight: "500", borderWidth: 1, overflow: "hidden" },
+  voteMeta: { fontSize: 10, color: T.creamFaint },
+  updated: { fontSize: 10, color: T.amberHi, fontWeight: "500" },
+  responseInd: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  responseIndText: { fontSize: 12, color: T.tealHi, fontWeight: "600" },
+  noResponse: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  pulse: { width: 6, height: 6, borderRadius: 3, backgroundColor: T.amberHi },
+  noResponseText: { fontSize: 12, color: T.creamFaint },
+
+  empty: { paddingVertical: 40, alignItems: "center" },
+  emptyIcon: { fontSize: 28, marginBottom: 12 },
+  emptyText: { color: T.creamDim, fontSize: 14, textAlign: "center", lineHeight: 22, marginBottom: 10 },
+  emptySub: { color: T.creamFaint, fontSize: 12, textAlign: "center", lineHeight: 20 },
 });

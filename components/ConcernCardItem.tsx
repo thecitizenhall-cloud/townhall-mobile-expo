@@ -10,13 +10,14 @@ type Props = {
 
 export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
   const hasOutcome = !!card.outcome_signal;
+  const quote = card.source_quote ?? card.quote;
+  const summary = card.summary ?? card.body;
+  const dateStr = card.meeting_date ?? card.created_at;
 
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.8}>
       <View style={s.header}>
-        {card.source_label && (
-          <Text style={s.source}>{card.source_label.toUpperCase()}</Text>
-        )}
+        <Text style={s.source}>{(card.source_label || "Council · Jackson Township").toUpperCase()}</Text>
         {hasOutcome && (
           <View style={s.outcomePill}>
             <Text style={s.outcomeText}>Outcome: {card.outcome_signal}</Text>
@@ -26,15 +27,15 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
 
       <Text style={s.title} numberOfLines={3}>{card.title}</Text>
 
-      {card.quote && (
-        <Text style={s.quote} numberOfLines={2}>"{card.quote}"</Text>
-      )}
+      {quote ? (
+        <Text style={s.quote} numberOfLines={2}>"{quote}"</Text>
+      ) : summary ? (
+        <Text style={s.summary} numberOfLines={2}>{summary}</Text>
+      ) : null}
 
       <View style={s.footer}>
         <Text style={s.date}>
-          {new Date(card.created_at).toLocaleDateString("en-US", {
-            month: "short", day: "numeric",
-          })}
+          {dateStr ? new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
         </Text>
         {isWatched && <Text style={s.watchedBadge}>Following</Text>}
       </View>
@@ -65,6 +66,7 @@ const s = StyleSheet.create({
     color: T.creamDim, fontSize: 13, lineHeight: 20, fontStyle: "italic",
     borderLeftWidth: 2, borderLeftColor: T.amberMid, paddingLeft: 10, marginBottom: 10,
   },
+  summary: { color: T.creamDim, fontSize: 13, lineHeight: 20, marginBottom: 10 },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   date: { color: T.creamFaint, fontSize: 11 },
   watchedBadge: {

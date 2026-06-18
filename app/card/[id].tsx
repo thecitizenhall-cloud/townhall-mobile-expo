@@ -1,184 +1,529 @@
 import { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Linking, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
-import { supabase, ConcernCard } from "../../lib/supabase";
+import { useLocalSearchParams, router, Stack } from "expo-router";
+import { supabase } from "../../lib/supabase";
+import {
+  watchConcernCard, unwatchConcernCard, recordConcernCardView,
+} from "../../lib/concernCards";
+import { goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
+import { timeAgo } from "../../lib/format";
+import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
+
+const OUTCOME_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: "Pending vote", color: T.amberHi, bg: T.amberLo },
+  approved: { label: "Approved", color: T.tealHi, bg: T.tealLo },
+  rejected: { label: "Rejected", color: T.redHi, bg: T.redLo },
+  tabled: { label: "Tabled", color: T.creamDim, bg: T.surface },
+  discussed: { label: "Under discussion", color: T.blueHi, bg: T.blueLo },
+  introduced: { label: "Introduced", color: T.purpleHi, bg: T.purpleLo },
+};
+
+const IMPACT_LABELS: Record<string, string> = {
+  budget: "💰 Budget", zoning: "🏛 Zoning", traffic: "🚦 Traffic", environment: "🌿 Environment",
+  housing: "🏘 Housing", education: "🎓 Education", safety: "🛡 Safety", infrastructure: "🔧 Infrastructure",
+};
+
+const getToken = async () => (await supabase.auth.getSession()).data.session?.access_token ?? null;
+
+function formatDate(d?: string | null) {
+  if (!d) return "";
+  const parts = String(d).split("T")[0].split("-");
+  if (parts.length === 3) {
+    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// "Town, ST" from a municipality_id like "jackson_nj" or "jackson_nj_zoning".
+function muniLabel(municipalityId?: string | null) {
+  const m = String(municipalityId || "").split("_").filter(Boolean);
+  if (!m.length) return "";
+  let stateIdx = m.findIndex((sg, i) => i > 0 && /^[a-z]{2}$/i.test(sg));
+  if (stateIdx < 0) stateIdx = m.length;
+  const town = m.slice(0, stateIdx).map((sg) => sg.charAt(0).toUpperCase() + sg.slice(1)).join(" ");
+  const state = stateIdx < m.length ? m[stateIdx].toUpperCase() : "";
+  return [town, state].filter(Boolean).join(", ");
+}
+
+function mapSearchUrl(card: any) {
+  let area = (card?.affected_area || "").trim();
+  area = area.replace(/\([^)]*\)/g, " ").replace(/\b(block|lot)\b[\s\S]*$/i, "").trim();
+  const primary = (area.split(",")[0] || "").trim() || area;
+  let locality = muniLabel(card?.municipality_id);
+  if (!locality) {
+    const fromText = area.split(",").slice(1).map((sg: string) => sg.trim()).reverse()
+      .find((sg: string) => /township|borough|\bNJ\b/i.test(sg));
+    if (fromText) locality = /\b[A-Z]{2}\b/.test(fromText) ? fromText : `${fromText}, NJ`;
+  }
+  if (!locality) locality = "Jackson Township, NJ";
+  const q = primary ? `${primary}, ${locality}` : locality;
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(q)}`;
+}
+
+function withHighlight(sourceUrl?: string | null, quote?: string | null) {
+  if (!sourceUrl || !quote) return sourceUrl || null;
+  if (sourceUrl.includes("#")) return sourceUrl;
+  if (/\.pdf(\?|$)/i.test(sourceUrl)) return sourceUrl;
+  const snippet = quote.trim().replace(/\s+/g, " ").split(" ").slice(0, 12).join(" ");
+  return `${sourceUrl}#:~:text=${encodeURIComponent(snippet)}`;
+}
 
 export default function ConcernCardDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [card, setCard] = useState<ConcernCard | null>(null);
-  const [isWatched, setIsWatched] = useState(false);
+
+  const [card, setCard] = useState<any>(null);
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [watched, setWatched] = useState(false);
+  const [watching, setWatching] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [watchLoading, setWatchLoading] = useState(false);
-  const [localContext, setLocalContext] = useState<string | null>(null);
+  const [relatedPosts, setRelatedPosts] = useState<any[]>([]);
+  const [relatedCards, setRelatedCards] = useState<any[]>([]);
+  const [replies, setReplies] = useState<any[]>([]);
+  const [cardSubs, setCardSubs] = useState<any[]>([]);
+  const [annotations, setAnnotations] = useState<any[]>([]);
+  const [reportRecord, setReportRecord] = useState<any>(null);
+  const [reportInfo, setReportInfo] = useState<any>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const { data: c } = await supabase
-        .from("concern_cards")
-        .select("*")
-        .eq("id", id)
-        .single();
-      setCard(c);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: watch } = await supabase
-          .from("card_watches")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("concern_card_id", id)
-          .maybeSingle();
-        setIsWatched(!!watch);
+  async function load() {
+    const { data: { user: u } } = await supabase.auth.getUser();
+    setUser(u);
+    if (u) {
+      const { data: proof } = await supabase.from("residency_proofs").select("id").eq("user_id", u.id).maybeSingle();
+      setVerified(!!proof);
+      const { data: rr } = await supabase.from("resident_reports")
+        .select("id, reporter_id, status, report_type, location_text, photo_url, official_response, official_response_name, official_response_email, responded_at")
+        .eq("concern_card_id", id).maybeSingle();
+      if (rr) { setReportInfo(rr); if (rr.reporter_id === u.id) setReportRecord(rr); }
+    }
 
-        // Get local context for this card from neighborhood_scores
-        const { data: p } = await supabase
-          .from("profiles")
-          .select("neighborhood_id")
-          .eq("id", user.id)
-          .single();
+    const { data: c } = await supabase.from("concern_cards").select("*").eq("id", id).maybeSingle();
+    setCard(c);
 
-        if (p?.neighborhood_id) {
-          const { data: score } = await supabase
-            .from("neighborhood_scores")
-            .select("local_context")
-            .eq("concern_card_id", id)
-            .eq("neighborhood_id", p.neighborhood_id)
-            .maybeSingle();
-          setLocalContext(score?.local_context ?? null);
-        }
+    if (c) {
+      const { data: related } = await supabase.from("concern_cards")
+        .select("id, meeting_date, source_url, pass1_confidence, outcome_signal, meeting_id, meetings(meeting_type)")
+        .eq("municipality_id", c.municipality_id)
+        .ilike("title", `%${c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30)}%`)
+        .order("meeting_date", { ascending: true });
+      const seen = new Set<string>();
+      setMeetings((related || []).filter((m: any) => {
+        const key = m.source_url || m.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }));
+
+      if (u) recordConcernCardView(u.id, id);
+
+      const { data: watch } = await supabase.from("card_watches")
+        .select("id").eq("user_id", u?.id || "").eq("concern_card_id", id).maybeSingle();
+      setWatched(!!watch);
+
+      const titleWords = c?.title?.split(" ").filter((w: string) => w.length > 4).slice(0, 3).join(" | ") || "";
+      if (titleWords && c?.municipality_id) {
+        const { data: posts } = await supabase.from("posts")
+          .select("*, profiles(display_name, trust_tier)")
+          .textSearch("body", titleWords.split(" | ")[0], { type: "plain" })
+          .order("created_at", { ascending: false }).limit(5);
+        setRelatedPosts(posts || []);
       }
 
-      setLoading(false);
-    })();
-  }, [id]);
+      if (c?.impact_type && c?.municipality_id) {
+        const { data: related311 } = await supabase.from("concern_cards")
+          .select("*").eq("municipality_id", c.municipality_id).eq("impact_type", c.impact_type)
+          .neq("id", id).eq("surfaces_to_feed", true)
+          .order("meeting_date", { ascending: false }).limit(4);
+        setRelatedCards(related311 || []);
+      }
 
-  async function toggleWatch() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+      const { data: evts } = await supabase.from("card_events")
+        .select("*, profiles:user_id(display_name)")
+        .eq("concern_card_id", id).eq("event_type", "comment")
+        .order("created_at", { ascending: false }).limit(50);
+      setReplies(evts || []);
 
-    setWatchLoading(true);
-    if (isWatched) {
-      await supabase.from("card_watches")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("concern_card_id", id);
-      setIsWatched(false);
-    } else {
-      const { error } = await supabase.from("card_watches")
-        .insert({ user_id: user.id, concern_card_id: id, watched_at: new Date().toISOString() });
-      if (!error) setIsWatched(true);
+      const { data: subs, error: subErr } = await supabase.from("card_subissues")
+        .select("id, title, created_at").eq("concern_card_id", id).order("created_at", { ascending: true });
+      if (!subErr) setCardSubs(subs || []);
+
+      const { data: anns } = await supabase.from("expert_annotations")
+        .select("id, annotation_text, corrected_impact_type, corrected_outcome_signal, created_at, profiles:expert_user_id(expert_handle, expert_credential)")
+        .eq("concern_card_id", id).order("created_at", { ascending: false });
+      setAnnotations(anns || []);
     }
-    setWatchLoading(false);
+    setLoading(false);
   }
 
-  if (loading || !card) {
+  async function handleWatch() {
+    // Following is a standing action — guests must verify first.
+    if (!user || !verified) { goVerify(); return; }
+    setWatching(true);
+    if (watched) { await unwatchConcernCard(user.id, id); setWatched(false); }
+    else { await watchConcernCard(user.id, id, card?.municipality_id); setWatched(true); }
+    setWatching(false);
+  }
+
+  async function updateReportStatus(newStatus: string) {
+    if (!reportRecord || updatingStatus) return;
+    setUpdatingStatus(true);
+    const { error } = await supabase.from("resident_reports").update({ status: newStatus }).eq("id", reportRecord.id);
+    if (!error) {
+      setReportRecord({ ...reportRecord, status: newStatus });
+      const outcomeMap: Record<string, string> = { open: "pending", acknowledged: "pending", in_progress: "deferred", resolved: "approved" };
+      await supabase.from("concern_cards").update({ outcome_signal: outcomeMap[newStatus] || "pending" }).eq("id", id);
+    }
+    setUpdatingStatus(false);
+  }
+
+  async function postCardComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }) {
+    if (!user || !body.trim()) return;
+    const { data, error } = await supabase.from("card_events").insert({
+      concern_card_id: id, neighborhood_id: card?.municipality_id || "unknown",
+      event_type: "comment", user_id: user.id, body: body.trim(), stance, sub_issue_id: subId || null,
+    }).select("*, profiles:user_id(display_name)").single();
+    if (error) return;
+    if (data) setReplies((prev) => (prev.some((r) => r.id === data.id) ? prev : [data, ...prev]));
+  }
+
+  async function createCardSubIssue(title: string) {
+    if (!user) return;
+    const { data, error } = await supabase.from("card_subissues")
+      .insert({ concern_card_id: id, title, created_by: user.id }).select("id, title, created_at").single();
+    if (error) return;
+    if (data) setCardSubs((prev) => [...prev, data]);
+  }
+
+  if (loading) {
     return (
-      <View style={[s.root, { justifyContent: "center", alignItems: "center" }]}>
+      <View style={[s.root, s.center]}>
+        <Stack.Screen options={{ title: "Concern" }} />
         <ActivityIndicator color={T.amber} />
       </View>
     );
   }
+  if (!card) {
+    return (
+      <View style={[s.root, s.center]}>
+        <Stack.Screen options={{ title: "Concern" }} />
+        <Text style={s.emptyText}>Council item not found.</Text>
+      </View>
+    );
+  }
+
+  const outcome = OUTCOME_LABELS[card.outcome_signal] || OUTCOME_LABELS.pending;
+  const impact = IMPACT_LABELS[card.impact_type] || "📋 Civic";
+
+  const ckComments: KitComment[] = [
+    ...replies.map((r) => ({
+      id: String(r.id), body: r._body || r.body || "", stance: r.stance,
+      name: r.profiles?.display_name || "Resident", created_at: r.created_at, sub_issue_id: r.sub_issue_id || null,
+    })),
+    ...relatedPosts.map((p) => ({
+      id: "fp" + p.id,
+      body: (p.body || "").slice(0, 220) + ((p.body || "").length > 220 ? "…" : ""),
+      stance: "neutral", name: p.profiles?.display_name || "Resident", created_at: p.created_at,
+      sub_issue_id: null, tag: "from the feed",
+    })),
+  ];
+  const hasOfficial = !!(card?.official_response || reportInfo?.official_response);
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={s.content}>
-      {card.source_label && (
-        <Text style={s.source}>{card.source_label}</Text>
-      )}
-
-      <Text style={s.title}>{card.title}</Text>
-
-      {card.outcome_signal && (
-        <View style={s.outcomeBanner}>
-          <Text style={s.outcomeLabel}>Outcome</Text>
-          <Text style={s.outcomeText}>{card.outcome_signal}</Text>
+    <View style={s.root}>
+      <Stack.Screen options={{ title: "Council item" }} />
+      <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {/* Hero */}
+        <View style={s.sourceRow}>
+          <Text style={s.sourceTag}>Jackson Township</Text>
+          <Text style={s.sourceDot}> · {formatDate(card.meeting_date)}</Text>
         </View>
-      )}
+        <Text style={s.title}>{card.title}</Text>
+        {card.summary ? <Text style={s.summary}>{card.summary}</Text> : null}
 
-      {card.quote && (
-        <View style={s.quoteBlock}>
-          <Text style={s.quoteText}>"{card.quote}"</Text>
+        {card.source_quote ? (
+          <View style={s.quote}>
+            <Text style={s.quoteText}>"{card.source_quote}"</Text>
+            {card.source_url ? (
+              <Text style={s.quoteSrc} onPress={() => Linking.openURL(withHighlight(card.source_url, card.source_quote)!)}>
+                View original document ↗
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={s.metaRow}>
+          <Text style={[s.pill, { backgroundColor: outcome.bg, color: outcome.color, borderColor: outcome.color }]}>{outcome.label}</Text>
+          <Text style={s.metaText}>{impact}</Text>
+          {card.next_action_date ? <Text style={s.metaText}>· Next action: {formatDate(card.next_action_date)}</Text> : null}
         </View>
-      )}
 
-      {localContext && (
-        <View style={s.contextBlock}>
-          <Text style={s.contextLabel}>Why this matters to your neighborhood</Text>
-          <Text style={s.contextText}>{localContext}</Text>
+        {card.affected_area ? (
+          <View style={{ marginTop: 14 }}>
+            <Text style={s.sectionHead}>What this affects</Text>
+            <Text style={s.explainerText}>{card.affected_area}</Text>
+            <Text style={s.mapLink} onPress={() => Linking.openURL(mapSearchUrl(card))}>📍 View on map ↗</Text>
+          </View>
+        ) : null}
+
+        {reportInfo && (reportInfo.photo_url || reportInfo.location_text) ? (
+          <View style={{ marginTop: 14 }}>
+            {reportInfo.location_text ? <Text style={s.reportLoc}>📍 {reportInfo.location_text}</Text> : null}
+            {reportInfo.photo_url ? <Image source={{ uri: reportInfo.photo_url }} style={s.reportPhoto} resizeMode="cover" /> : null}
+          </View>
+        ) : null}
+
+        <Pressable
+          onPress={handleWatch}
+          disabled={watching}
+          style={[s.watchBtn, watched ? s.watchBtnOn : s.watchBtnOff]}
+        >
+          <Text style={[s.watchBtnText, { color: watched ? T.tealHi : T.amberHi }]}>
+            {watching ? "…" : !verified ? "Verify residency to follow"
+              : watched ? "✓ Following this item — you'll be notified of updates" : "+ Follow this item"}
+          </Text>
+        </Pressable>
+        {!user ? <Text style={s.signInNote}>Sign in to follow and receive updates</Text> : null}
+
+        {/* Comments */}
+        <View style={s.window}>
+          <View style={s.windowHead}>
+            <Text style={s.windowHeadText}>💬 Comments</Text>
+            <Text style={s.windowCount}>{ckComments.length}</Text>
+          </View>
+          <CommentKit
+            currentUser={user}
+            subjectTitle={card.title}
+            subjectSummary={card.summary || card.source_quote || ""}
+            getToken={getToken}
+            comments={ckComments}
+            subIssues={cardSubs}
+            timeAgo={timeAgo}
+            onPost={postCardComment}
+            onCreateSubIssue={createCardSubIssue}
+          />
         </View>
-      )}
 
-      <Text style={s.body}>{card.body}</Text>
-
-      {card.source_url && (
-        <TouchableOpacity onPress={() => Linking.openURL(card.source_url!)}>
-          <Text style={s.sourceLink}>View source document</Text>
-        </TouchableOpacity>
-      )}
-
-      <TouchableOpacity
-        style={[s.watchBtn, isWatched && s.watchBtnActive]}
-        onPress={toggleWatch}
-        disabled={watchLoading}
-      >
-        {watchLoading
-          ? <ActivityIndicator color={isWatched ? T.bg : T.amber} />
-          : (
-            <Text style={[s.watchBtnText, isWatched && s.watchBtnTextActive]}>
-              {isWatched ? "Following — tap to unfollow" : "Follow this issue"}
+        {/* Official reply */}
+        <View style={s.window}>
+          <View style={s.windowHead}><Text style={s.windowHeadText}>✅ Official reply</Text></View>
+          {hasOfficial ? (
+            <View>
+              {card?.official_response ? (
+                <View style={s.post}>
+                  <Text style={s.postBody}>{card.official_response}</Text>
+                  <Text style={s.postMeta}>
+                    {card.official_response_name || "Official"}
+                    {card.official_response_verified && card.official_response_email
+                      ? ` · via ${String(card.official_response_email).split("@")[1]} · verified by email, not identity` : ""}
+                  </Text>
+                </View>
+              ) : null}
+              {reportInfo?.official_response ? (
+                <View style={s.govInbox}>
+                  <Text style={s.govInboxLabel}>Verified government inbox</Text>
+                  <Text style={s.govInboxBody}>{reportInfo.official_response}</Text>
+                  <Text style={s.govInboxMeta}>
+                    {reportInfo.official_response_name ? `${reportInfo.official_response_name} · ` : ""}{reportInfo.official_response_email}
+                    {reportInfo.responded_at ? ` · ${new Date(reportInfo.responded_at).toLocaleDateString()}` : ""}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={s.windowEmpty}>
+              No official response yet. When the responsible official replies, it lands here — attributed to a verified government inbox, dated, on the record.
             </Text>
           )}
-      </TouchableOpacity>
+        </View>
 
-      {!isWatched && (
-        <Text style={s.watchHint}>
-          You'll be notified if the outcome changes or a meeting addresses this.
-        </Text>
-      )}
+        {/* Expert review */}
+        <View style={s.window}>
+          <View style={s.windowHead}>
+            <Text style={s.windowHeadText}>🎓 Expert review</Text>
+            {annotations.length > 0 ? <Text style={s.windowCount}>{annotations.length}</Text> : null}
+          </View>
+          {annotations.length > 0 ? (
+            annotations.map((a) => (
+              <View key={a.id} style={s.post}>
+                <Text style={s.postBody}>{a.annotation_text}</Text>
+                <Text style={s.postMeta}>
+                  {a.profiles?.expert_handle || "Verified expert"}
+                  {a.profiles?.expert_credential ? ` · ${a.profiles.expert_credential}` : ""}
+                  {a.corrected_impact_type || a.corrected_outcome_signal ? " · suggested correction" : ""}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={s.windowEmpty}>
+              No expert review yet. Verified subject-matter experts can annotate this item with context or corrections.
+            </Text>
+          )}
+        </View>
 
-      <Text style={s.datestamp}>
-        {new Date(card.created_at).toLocaleDateString("en-US", {
-          weekday: "long", year: "numeric", month: "long", day: "numeric",
-        })}
-      </Text>
-    </ScrollView>
+        {/* Round-trip status */}
+        <View style={s.window}>
+          <View style={s.windowHead}><Text style={s.windowHeadText}>🔄 Round-trip status</Text></View>
+          <View style={s.statusRow}>
+            <Text style={[s.pill, { backgroundColor: outcome.bg, color: outcome.color, borderColor: outcome.color }]}>{outcome.label}</Text>
+            {reportRecord ? <Text style={s.metaText}>· report: {reportRecord.status}</Text> : null}
+          </View>
+
+          {meetings.length > 0 && (
+            <>
+              <Text style={[s.sectionHead, { marginTop: 8 }]}>
+                Meeting history · {meetings.length} session{meetings.length !== 1 ? "s" : ""}
+              </Text>
+              <View style={s.timeline}>
+                {meetings.map((m, i) => {
+                  const mo = OUTCOME_LABELS[m.outcome_signal] || OUTCOME_LABELS.pending;
+                  const last = i === meetings.length - 1;
+                  return (
+                    <View key={m.id} style={s.meetingRow}>
+                      <View style={s.meetingRail}>
+                        <View style={[s.meetingDot, { backgroundColor: mo.color }]} />
+                        {!last && <View style={s.meetingLine} />}
+                      </View>
+                      <View style={s.meetingContent}>
+                        <Text style={s.meetingDate}>{formatDate(m.meeting_date)}</Text>
+                        <Text style={[s.pillSm, { backgroundColor: mo.bg, color: mo.color, borderColor: mo.color }]}>{mo.label}</Text>
+                        <Text style={s.meetingType}>{m.meetings?.meeting_type || "Council meeting"}</Text>
+                        {m.source_url ? (
+                          <Text style={s.meetingLink} onPress={() => Linking.openURL(withHighlight(m.source_url, card.source_quote)!)}>View agenda ↗</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          {reportRecord && (
+            <View style={s.yourReport}>
+              <Text style={s.yourReportLabel}>Your report</Text>
+              <Text style={s.yourReportText}>
+                You filed this report. Update its status as things develop — neighbors following this card are notified.
+              </Text>
+              <View style={s.statusBtns}>
+                {([["open", "Open"], ["acknowledged", "Acknowledged by town"], ["in_progress", "Town is working on it"], ["resolved", "Resolved"]] as const).map(([val, label]) => {
+                  const on = reportRecord.status === val;
+                  return (
+                    <Pressable key={val} disabled={updatingStatus || on} onPress={() => updateReportStatus(val)}
+                      style={[s.statusBtn, { borderColor: on ? T.teal : T.border, backgroundColor: on ? T.tealLo : "transparent" }]}>
+                      <Text style={[s.statusBtnText, { color: on ? T.tealHi : T.creamDim }]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {meetings.length === 0 && !reportRecord && (
+            <Text style={s.windowEmpty}>This item is on the record. Follow it to be told when its status changes.</Text>
+          )}
+        </View>
+
+        {/* Related civic items */}
+        {relatedCards.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            <Text style={s.sectionHead}>Related civic items</Text>
+            {relatedCards.map((rc) => {
+              const ro = OUTCOME_LABELS[rc.outcome_signal] || OUTCOME_LABELS.pending;
+              return (
+                <Pressable key={rc.id} style={s.relatedCard} onPress={() => router.push({ pathname: "/card/[id]", params: { id: rc.id } })}>
+                  <Text style={s.relatedKind}>{rc.source_url?.includes("seeclickfix") ? "311 Report" : "Council item"}</Text>
+                  <Text style={s.relatedTitle}>{rc.title}</Text>
+                  <View style={s.relatedMeta}>
+                    <Text style={[s.pillSm, { backgroundColor: ro.bg, color: ro.color, borderColor: ro.color }]}>{ro.label}</Text>
+                    <Text style={s.metaText}>{formatDate(rc.meeting_date)}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {card.source_url ? (
+          <Text style={s.sourceLink} onPress={() => Linking.openURL(card.source_url)}>→ View original council document ↗</Text>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
-  content: { padding: 20, paddingBottom: 60 },
-  source: { color: T.amber, fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 10 },
-  title: { color: T.cream, fontSize: 22, fontWeight: "600", lineHeight: 30, marginBottom: 16 },
-  outcomeBanner: {
-    backgroundColor: T.tealLo, borderWidth: 1, borderColor: T.teal,
-    borderRadius: 10, padding: 14, marginBottom: 16,
-  },
-  outcomeLabel: { color: T.teal, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 },
-  outcomeText: { color: T.cream, fontSize: 14 },
-  quoteBlock: {
-    borderLeftWidth: 3, borderLeftColor: T.amberMid,
-    paddingLeft: 14, marginBottom: 16,
-  },
-  quoteText: { color: T.creamDim, fontSize: 14, lineHeight: 22, fontStyle: "italic" },
-  contextBlock: {
-    backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid,
-    borderRadius: 10, padding: 14, marginBottom: 16,
-  },
-  contextLabel: { color: T.amberHi, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 6 },
-  contextText: { color: T.cream, fontSize: 13, lineHeight: 20 },
-  body: { color: T.creamDim, fontSize: 14, lineHeight: 24, marginBottom: 20 },
-  sourceLink: { color: T.amberHi, fontSize: 13, textDecorationLine: "underline", marginBottom: 24 },
-  watchBtn: {
-    borderWidth: 1.5, borderColor: T.amber,
-    borderRadius: 10, padding: 14, alignItems: "center", marginBottom: 10,
-  },
-  watchBtnActive: { backgroundColor: T.amber },
-  watchBtnText: { color: T.amberHi, fontSize: 14, fontWeight: "600" },
-  watchBtnTextActive: { color: T.bg },
-  watchHint: { color: T.creamFaint, fontSize: 12, textAlign: "center", marginBottom: 24 },
-  datestamp: { color: T.creamFaint, fontSize: 12, marginTop: 12 },
+  center: { justifyContent: "center", alignItems: "center" },
+  content: { padding: 16, paddingBottom: 60 },
+  emptyText: { color: T.creamDim, fontSize: 14 },
+
+  sourceRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  sourceTag: { fontSize: 10, fontWeight: "500", color: T.amberHi, textTransform: "uppercase", letterSpacing: 1 },
+  sourceDot: { fontSize: 10, color: T.creamFaint },
+  title: { fontSize: 20, color: T.cream, lineHeight: 27, marginBottom: 12, fontWeight: "600" },
+  summary: { fontSize: 14, color: T.creamDim, lineHeight: 25, marginBottom: 14 },
+  quote: { paddingHorizontal: 14, paddingVertical: 10, borderLeftWidth: 3, borderLeftColor: T.amber, backgroundColor: T.surface, borderRadius: 8, marginBottom: 14 },
+  quoteText: { fontSize: 13, color: T.cream, fontStyle: "italic", lineHeight: 22 },
+  quoteSrc: { marginTop: 8, fontSize: 11, color: T.blueHi },
+  metaRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" },
+  pill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 99, fontSize: 11, fontWeight: "500", borderWidth: 1, overflow: "hidden" },
+  pillSm: { paddingHorizontal: 7, paddingVertical: 1, borderRadius: 99, fontSize: 10, fontWeight: "500", borderWidth: 1, overflow: "hidden" },
+  metaText: { fontSize: 11, color: T.creamFaint },
+  sectionHead: { fontSize: 10, fontWeight: "500", color: T.creamFaint, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
+  explainerText: { fontSize: 13, color: T.creamDim, lineHeight: 22 },
+  mapLink: { marginTop: 8, fontSize: 12, color: T.blueHi },
+  reportLoc: { fontSize: 12, color: T.creamDim, marginBottom: 8 },
+  reportPhoto: { width: "100%", height: 220, borderRadius: 10, borderWidth: 1, borderColor: T.border },
+
+  watchBtn: { marginTop: 16, padding: 12, borderRadius: 10, borderWidth: 1, alignItems: "center" },
+  watchBtnOn: { backgroundColor: T.tealLo, borderColor: T.teal },
+  watchBtnOff: { backgroundColor: T.amberLo, borderColor: T.amber },
+  watchBtnText: { fontSize: 14, fontWeight: "500", textAlign: "center" },
+  signInNote: { fontSize: 11, color: T.creamFaint, textAlign: "center", marginTop: 6 },
+
+  window: { borderWidth: 1, borderColor: T.border, borderRadius: 14, backgroundColor: T.surface, padding: 14, marginTop: 14 },
+  windowHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  windowHeadText: { flex: 1, fontSize: 11, fontWeight: "600", color: T.cream, textTransform: "uppercase", letterSpacing: 0.8 },
+  windowCount: { fontSize: 11, color: T.creamFaint },
+  windowEmpty: { paddingVertical: 16, color: T.creamFaint, fontSize: 12.5, lineHeight: 19, textAlign: "center" },
+
+  post: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.border },
+  postBody: { fontSize: 13, color: T.creamDim, lineHeight: 22, marginBottom: 6 },
+  postMeta: { fontSize: 11, color: T.creamFaint },
+  govInbox: { backgroundColor: T.tealLo, borderWidth: 1, borderColor: T.teal, borderRadius: 10, padding: 14, marginTop: 10 },
+  govInboxLabel: { fontSize: 10, color: T.tealHi, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "600", marginBottom: 8 },
+  govInboxBody: { fontSize: 13, color: T.cream, lineHeight: 22 },
+  govInboxMeta: { fontSize: 11, color: T.creamDim, marginTop: 8 },
+
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, flexWrap: "wrap" },
+  timeline: { borderWidth: 1, borderColor: T.border, borderRadius: 12, backgroundColor: T.bg, paddingHorizontal: 14, paddingVertical: 2, marginBottom: 12 },
+  meetingRow: { flexDirection: "row", gap: 12, paddingVertical: 12 },
+  meetingRail: { alignItems: "center", alignSelf: "stretch" },
+  meetingDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
+  meetingLine: { flex: 1, width: 1, backgroundColor: T.border, minHeight: 10 },
+  meetingContent: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  meetingDate: { fontSize: 12, color: T.amberHi, fontWeight: "500" },
+  meetingType: { fontSize: 12, color: T.creamDim },
+  meetingLink: { fontSize: 11, color: T.blueHi },
+
+  yourReport: { borderTopWidth: 1, borderTopColor: T.tealLo, paddingTop: 12, marginTop: 4 },
+  yourReportLabel: { fontSize: 10, color: T.tealHi, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "500", marginBottom: 8 },
+  yourReportText: { fontSize: 12, color: T.creamDim, marginBottom: 10, lineHeight: 20 },
+  statusBtns: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  statusBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  statusBtnText: { fontSize: 11 },
+
+  relatedCard: { padding: 12, borderWidth: 1, borderColor: T.border, borderRadius: 10, marginBottom: 8, backgroundColor: T.surface },
+  relatedKind: { fontSize: 10, color: T.amberHi, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "500" },
+  relatedTitle: { fontSize: 13, color: T.cream, fontWeight: "500", marginBottom: 6, lineHeight: 18 },
+  relatedMeta: { flexDirection: "row", gap: 8, alignItems: "center" },
+  sourceLink: { fontSize: 13, color: T.blueHi, marginTop: 16 },
 });
