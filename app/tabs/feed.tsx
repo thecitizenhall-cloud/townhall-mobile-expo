@@ -117,9 +117,10 @@ export default function FeedScreen() {
       setCivic(civicItems);
 
       // Resident posts (with author profile), scoped to the neighborhood.
+      // No removed_at/hidden_at filter — those columns don't exist in the live
+      // schema; post visibility is enforced by RLS, matching the web TownScreen.
       let postQ = supabase.from("posts")
         .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
-        .is("removed_at", null).is("hidden_at", null)
         .order("created_at", { ascending: false }).limit(50);
       if (p?.neighborhood_id) postQ = postQ.eq("neighborhood_id", p.neighborhood_id);
       const { data: postRows } = await postQ;
