@@ -11,6 +11,10 @@ import { T } from "../../lib/theme";
 // that the web app uses. This avoids shipping a React Native snarkjs port while
 // keeping the exact same cryptographic circuit (residency.wasm + residency.zkey).
 const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL ?? "https://www.townhallcafe.org";
+// Proof verification is the Supabase edge function — the same endpoint the web
+// app hits (OnboardingScreen.jsx / VerifyResidencyModal.jsx). There is no
+// Next.js /api/zk-verify route, so SITE_URL must NOT be used for verify.
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
 
 export default function OnboardingZKProof() {
   const params = useLocalSearchParams<{
@@ -61,7 +65,7 @@ export default function OnboardingZKProof() {
         if (!user) return;
 
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${SITE_URL}/api/zk-verify`, {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/zk-verify`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

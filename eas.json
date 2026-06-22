@@ -10,14 +10,24 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "ios": { "resourceClass": "m-medium" }
+      "ios": { "resourceClass": "m-medium" },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wjgtppyevlehfpwrbwzx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqZ3RwcHlldmxlaGZwd3Jid3p4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyNDMxMTgsImV4cCI6MjA5MjgxOTExOH0.0nwg1fs2oe5uqeX_nmXSVos-mVChcFvt-K0hFx-xbvU",
+        "EXPO_PUBLIC_SITE_URL": "https://www.townhallcafe.org"
+      }
     },
     "preview-simulator": {
       "extends": "preview",
       "ios": { "simulator": true }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wjgtppyevlehfpwrbwzx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqZ3RwcHlldmxlaGZwd3Jid3p4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyNDMxMTgsImV4cCI6MjA5MjgxOTExOH0.0nwg1fs2oe5uqeX_nmXSVos-mVChcFvt-K0hFx-xbvU",
+        "EXPO_PUBLIC_SITE_URL": "https://www.townhallcafe.org"
+      }
     }
   },
   "submit": {

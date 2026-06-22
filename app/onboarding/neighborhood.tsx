@@ -8,7 +8,21 @@ import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { T } from "../../lib/theme";
 
-type Neighborhood = { id: string; name: string; municipality_id: string };
+// Live schema: neighborhoods keys off city_id (FK to cities). There is no
+// municipality_id column on this table — that lives on neighborhood_scores.
+// center_lat/center_lng power the residency fallback when GPS is unavailable.
+type Neighborhood = {
+  id: string;
+  name: string;
+  city_id: string;
+  center_lat: number | null;
+  center_lng: number | null;
+};
+
+// Final fallback when neither GPS nor a neighborhood center is available —
+// Jackson Township center, matching the web app (OnboardingScreen.jsx).
+const JACKSON_LAT = 40.103;
+const JACKSON_LNG = -74.349;
 
 export default function OnboardingNeighborhood() {
   const [detecting, setDetecting] = useState(true);
@@ -53,8 +67,8 @@ export default function OnboardingNeighborhood() {
       if (cities && cities.length > 0) {
         const { data: hoods } = await supabase
           .from("neighborhoods")
-          .select("id, name, municipality_id")
-          .eq("municipality_id", cities[0].id)
+          .select("id, name, city_id, center_lat, center_lng")
+          .eq("city_id", cities[0].id)
           .limit(10);
 
         if (hoods && hoods.length > 0) {
@@ -77,7 +91,7 @@ export default function OnboardingNeighborhood() {
     if (q.length < 2) { setResults([]); return; }
     const { data } = await supabase
       .from("neighborhoods")
-      .select("id, name, municipality_id")
+      .select("id, name, city_id, center_lat, center_lng")
       .ilike("name", `%${q}%`)
       .limit(8);
     setResults(data || []);
@@ -100,9 +114,12 @@ export default function OnboardingNeighborhood() {
       params: {
         neighborhoodId: hood.id,
         neighborhoodName: hood.name,
-        municipalityId: hood.municipality_id,
-        lat: coords?.lat?.toString() ?? "",
-        lng: coords?.lng?.toString() ?? "",
+        municipalityId: hood.city_id,
+        // Fallback chain mirrors web: real GPS → neighborhood center → Jackson.
+        // A proof built on the neighborhood center still verifies (the center is
+        // inside the boundary) — fine for town-level residency when GPS is denied.
+        lat: (coords?.lat ?? hood.center_lat ?? JACKSON_LAT).toString(),
+        lng: (coords?.lng ?? hood.center_lng ?? JACKSON_LNG).toString(),
       },
     });
   }
