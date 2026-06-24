@@ -50,7 +50,9 @@ export default function ReportButton({
 
   return (
     <View>
-      <Pressable onPress={() => setOpen((o) => !o)} disabled={reported} hitSlop={8}>
+      <Pressable onPress={() => setOpen((o) => !o)} disabled={reported} hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={reported ? "Reported" : "Report this content"}>
         <Text style={[s.flag, reported && { color: T.amberHi }]}>⚑</Text>
       </Pressable>
       {open && !reported && (
