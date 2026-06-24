@@ -18,8 +18,10 @@ export async function hasResidencyProof(userId: string): Promise<boolean> {
 // Send a guest into the verification flow. We re-enter at the neighborhood step
 // (not zk-proof directly) so GPS coordinates are freshly captured — the proof is
 // worthless without them, and they are never persisted, so they can't be reused.
+// ?verify=1 marks this as an on-demand verify (neighborhood → zk-proof), distinct
+// from initial onboarding (neighborhood → welcome, ZK deferred to first act).
 export function goVerify() {
-  router.push("/onboarding/neighborhood");
+  router.push("/onboarding/neighborhood?verify=1");
 }
 
 // Mirrors lib/getResidencyProof.js on web. LIVE SCHEMA: residency_proofs is

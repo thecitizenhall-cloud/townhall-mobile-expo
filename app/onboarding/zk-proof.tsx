@@ -5,6 +5,7 @@ import {
 import { WebView } from "react-native-webview";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { attestationStatement, recordAttestation } from "../../lib/attestation";
 import { T } from "../../lib/theme";
 
 // The ZK proof is generated in a WebView using the same snarkjs + WASM artifacts
@@ -28,6 +29,7 @@ export default function OnboardingZKProof() {
   const webRef = useRef<WebView>(null);
   const [status, setStatus] = useState<"idle" | "proving" | "done" | "error">("idle");
   const [statusMsg, setStatusMsg] = useState("Waiting to start…");
+  const [attested, setAttested] = useState(false);
 
   // Set params before page JS runs so they're available when the page posts "ready".
   // The page itself posts { type: "ready" } after its event listener is wired —
@@ -85,6 +87,7 @@ export default function OnboardingZKProof() {
 
         setStatus("done");
         setStatusMsg("Residency verified!");
+        await recordAttestation(params.neighborhoodName);
         router.replace("/onboarding/welcome");
         return;
       }
@@ -129,19 +132,28 @@ export default function OnboardingZKProof() {
       />
 
       {status === "idle" && (
-        <TouchableOpacity
-          style={s.btn}
-          onPress={() => {
-            setStatus("proving");
-            setStatusMsg("Requesting location permission…");
-            webRef.current?.injectJavaScript(`
-              window.dispatchEvent(new CustomEvent("townhall:start-zk"));
-              true;
-            `);
-          }}
-        >
-          <Text style={s.btnText}>Generate proof</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={s.attestRow} activeOpacity={0.7} onPress={() => setAttested(a => !a)}>
+            <View style={[s.checkbox, attested && s.checkboxOn]}>
+              {attested && <Text style={s.checkboxMark}>✓</Text>}
+            </View>
+            <Text style={s.attestText}>{attestationStatement(params.neighborhoodName)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.btn, !attested && s.btnDisabled]}
+            disabled={!attested}
+            onPress={() => {
+              setStatus("proving");
+              setStatusMsg("Requesting location permission…");
+              webRef.current?.injectJavaScript(`
+                window.dispatchEvent(new CustomEvent("townhall:start-zk"));
+                true;
+              `);
+            }}
+          >
+            <Text style={s.btnText}>Generate proof</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       {status === "error" && (
@@ -178,7 +190,16 @@ const s = StyleSheet.create({
   checkmark: { color: T.teal, fontSize: 36, marginBottom: 8 },
   errorMark: { color: T.red, fontSize: 36, marginBottom: 8 },
   btn: { backgroundColor: T.amber, borderRadius: 10, padding: 16, alignItems: "center", marginTop: 8 },
+  btnDisabled: { opacity: 0.5 },
   btnText: { color: T.bg, fontSize: 15, fontWeight: "600" },
+  attestRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 18, paddingHorizontal: 2 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: T.border,
+    backgroundColor: T.surface, alignItems: "center", justifyContent: "center", marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: T.amber, borderColor: T.amber },
+  checkboxMark: { color: T.bg, fontSize: 14, fontWeight: "700", lineHeight: 16 },
+  attestText: { flex: 1, color: T.creamDim, fontSize: 13, lineHeight: 19 },
   btnSkip: { padding: 16, alignItems: "center" },
   btnSkipText: { color: T.creamDim, fontSize: 14 },
   skipNote: { color: T.creamFaint, fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 8 },

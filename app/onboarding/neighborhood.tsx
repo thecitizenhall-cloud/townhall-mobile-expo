@@ -4,7 +4,7 @@ import {
   TextInput, TouchableOpacity, FlatList,
 } from "react-native";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { T } from "../../lib/theme";
 
@@ -25,6 +25,9 @@ const JACKSON_LAT = 40.103;
 const JACKSON_LNG = -74.349;
 
 export default function OnboardingNeighborhood() {
+  // ?verify=1 → on-demand just-in-time verification (continue to the ZK proof).
+  // Absent → initial onboarding (enter and read; ZK runs later, on first act).
+  const { verify } = useLocalSearchParams<{ verify?: string }>();
   const [detecting, setDetecting] = useState(true);
   const [detectedNeighborhood, setDetectedNeighborhood] = useState<Neighborhood | null>(null);
   const [search, setSearch] = useState("");
@@ -108,7 +111,16 @@ export default function OnboardingNeighborhood() {
     }).eq("id", user.id);
 
     setSaving(false);
-    // Pass coords to next step for ZK proof
+
+    if (verify !== "1") {
+      // Initial onboarding: neighborhood_id is now saved, so enter and read.
+      // ZK runs just-in-time (goVerify → here with ?verify=1) the first time
+      // the resident votes/stakes/escalates. welcome.tsx sets onboarded=true.
+      router.replace("/onboarding/welcome");
+      return;
+    }
+
+    // On-demand verification → run the ZK proof. Pass coords to the next step.
     router.push({
       pathname: "/onboarding/zk-proof",
       params: {

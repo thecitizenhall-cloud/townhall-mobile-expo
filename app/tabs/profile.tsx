@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { reservedNameError } from "../../lib/displayName";
 import { goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
@@ -126,6 +127,8 @@ export default function ProfileScreen() {
 
   async function saveName() {
     if (!nameDraft.trim() || saving) return;
+    const nameErr = reservedNameError(nameDraft);
+    if (nameErr) { Alert.alert("Choose a different name", nameErr); return; }
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {

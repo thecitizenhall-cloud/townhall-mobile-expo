@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { reservedNameError } from "../../lib/displayName";
 import { T } from "../../lib/theme";
 
 export default function Register() {
@@ -20,6 +21,11 @@ export default function Register() {
     }
     if (password.length < 8) {
       Alert.alert("Password must be at least 8 characters");
+      return;
+    }
+    const nameErr = reservedNameError(displayName);
+    if (nameErr) {
+      Alert.alert("Choose a different name", nameErr);
       return;
     }
     setLoading(true);
@@ -54,7 +60,7 @@ export default function Register() {
         </Text>
 
         <View style={s.form}>
-          <Text style={s.label}>Display name</Text>
+          <Text style={s.label}>What should neighbors call you?</Text>
           <TextInput
             style={s.input}
             value={displayName}
@@ -62,8 +68,12 @@ export default function Register() {
             autoCapitalize="words"
             returnKeyType="next"
             placeholderTextColor={T.creamFaint}
-            placeholder="Your name or initials"
+            placeholder="Maya, MayaC, or a nickname"
           />
+          <Text style={s.hint}>
+            A first name or nickname is fine — you don't need your full legal name.
+            Your verified-resident badge is what neighbors trust.
+          </Text>
 
           <Text style={[s.label, { marginTop: 16 }]}>Email</Text>
           <TextInput
@@ -119,6 +129,7 @@ const s = StyleSheet.create({
   sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 36 },
   form: { gap: 4 },
   label: { color: T.creamDim, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  hint: { color: T.creamDim, fontSize: 12, lineHeight: 18, marginTop: 6 },
   input: {
     backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
     borderRadius: 10, padding: 14, color: T.cream, fontSize: 15,
