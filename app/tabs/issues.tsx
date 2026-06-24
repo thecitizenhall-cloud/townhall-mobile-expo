@@ -89,7 +89,7 @@ export default function YourIssuesScreen() {
 
       if (prof?.neighborhood_id) {
         const { data: nbhdIssues } = await supabase.from("civic_issues")
-          .select("*").eq("neighborhood_id", prof.neighborhood_id).order("voice_count", { ascending: false }).limit(5);
+          .select("*").eq("neighborhood_id", prof.neighborhood_id).is("removed_at", null).order("voice_count", { ascending: false }).limit(5);
         setNeighborhoodIssues(nbhdIssues || []);
       }
 
@@ -103,7 +103,7 @@ export default function YourIssuesScreen() {
       let watchedCardData: any[] = [];
       if (cardWatches?.length) {
         const { data: cards } = await supabase.from("concern_cards")
-          .select("*").in("id", cardWatches.map((w: any) => w.concern_card_id)).eq("archived", false);
+          .select("*").in("id", cardWatches.map((w: any) => w.concern_card_id)).eq("archived", false).is("removed_at", null);
         watchedCardData = cards || [];
         if (watchedCardData.length) { setConcernCards(watchedCardData); setCardsAreFallback(false); }
       }
