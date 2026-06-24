@@ -2,11 +2,10 @@
 // web components/TownScreen.jsx: author/bot identity, tags, upvote, escalate to
 // the civic tracker, "open issue" link, and a report menu. Bot (council) and
 // official posts get distinct treatment.
-import { useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert } from "react-native";
-import { supabase } from "../lib/supabase";
 import { T } from "../lib/theme";
 import { timeAgo, initials } from "../lib/format";
+import ReportButton from "./ReportButton";
 
 const TAGS: Record<string, { bg: string; color: string; border: string }> = {
   banter: { bg: "#2A1E08", color: "#F0B84A", border: "#8C5E14" },
@@ -26,15 +25,6 @@ function av(id?: string) {
   return AV_COLORS[Math.abs(h) % AV_COLORS.length];
 }
 
-const REPORT_REASONS = [
-  { key: "inappropriate", label: "Inappropriate content" },
-  { key: "intimate_imagery", label: "Nonconsensual intimate imagery" },
-  { key: "spam", label: "Spam or misleading" },
-  { key: "harassment", label: "Harassment" },
-  { key: "misinformation", label: "Misinformation" },
-  { key: "other", label: "Other" },
-];
-
 function PostTag({ tag }: { tag: string }) {
   const st = TAGS[tag] || TAGS.banter;
   return <Text style={[s.tag, { backgroundColor: st.bg, color: st.color, borderColor: st.border }]}>{tag}</Text>;
@@ -49,9 +39,6 @@ export default function PostCard({
   onEscalate: (post: any) => void;
   onOpenIssue: (issueId: string) => void;
 }) {
-  const [reported, setReported] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-
   const name = post.profiles?.display_name || "Resident";
   const hood = post.profiles?.neighborhood || "Townhall";
   const isBot = post.profiles?.is_bot || false;
@@ -67,12 +54,6 @@ export default function PostCard({
       { text: "Cancel", style: "cancel" },
       { text: "Escalate", onPress: () => onEscalate(post) },
     ]);
-  }
-
-  async function handleReport(reason: string) {
-    setShowMenu(false);
-    const { error } = await supabase.from("reported_posts").insert({ post_id: post.id, reporter_id: currentUserId, reason });
-    if (!error || error.code === "23505") setReported(true);
   }
 
   return (
@@ -95,24 +76,10 @@ export default function PostCard({
         <View style={s.metaRight}>
           <Text style={s.time}>{timeAgo(post.created_at)}</Text>
           {post.author_id !== currentUserId && !isBot && currentUserId ? (
-            <Pressable onPress={() => setShowMenu((m) => !m)} hitSlop={8}>
-              <Text style={[s.flag, reported && { color: T.amberHi }]}>⚑</Text>
-            </Pressable>
+            <ReportButton contentType="post" contentId={post.id} currentUserId={currentUserId} />
           ) : null}
         </View>
       </View>
-
-      {showMenu && !reported && (
-        <View style={s.reportMenu}>
-          <Text style={s.reportMenuHead}>Report reason</Text>
-          {REPORT_REASONS.map((r) => (
-            <Pressable key={r.key} onPress={() => handleReport(r.key)} style={s.reportItem}>
-              <Text style={s.reportItemText}>{r.label}</Text>
-            </Pressable>
-          ))}
-          <Text style={s.reportNote}>Nonconsensual intimate imagery is removed within 48 hours.</Text>
-        </View>
-      )}
 
       <Text style={s.body}>{post.body}</Text>
 

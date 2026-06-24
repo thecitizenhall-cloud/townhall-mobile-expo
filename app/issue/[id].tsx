@@ -177,7 +177,7 @@ export default function IssueDetail() {
       setWatcherCount(watchers || 0);
 
       const { data: reps } = await supabase.from("issue_replies")
-        .select("*, profiles(display_name)").eq("issue_id", issueId).order("created_at", { ascending: true });
+        .select("*, profiles(display_name)").eq("issue_id", issueId).is("removed_at", null).order("created_at", { ascending: true });
       setReplies(reps || []);
 
       const { data: stakeRows } = await supabase.from("issue_stakes")
@@ -503,6 +503,7 @@ export default function IssueDetail() {
       id: "r" + r.id, body: r.body, stance: r.stance,
       name: r.profiles?.display_name || "Resident", created_at: r.created_at,
       sub_issue_id: r.sub_issue_id || null,
+      reportType: "issue_reply" as const, reportId: r.id, authorId: r.author_id,
     })),
     ...stakes.filter((st) => st.user_id && !repliedUserIds.has(st.user_id)).map((st) => ({
       id: "s" + st.id, body: st.body, stance: "neutral",
