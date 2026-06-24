@@ -148,6 +148,7 @@ export default function ConcernCardDetail() {
       const { data: evts } = await supabase.from("card_events")
         .select("*, profiles:user_id(display_name)")
         .eq("concern_card_id", id).eq("event_type", "comment")
+        .is("removed_at", null)
         .order("created_at", { ascending: false }).limit(50);
       setReplies(evts || []);
 
@@ -234,12 +235,14 @@ export default function ConcernCardDetail() {
     ...replies.map((r) => ({
       id: String(r.id), body: r._body || r.body || "", stance: r.stance,
       name: r.profiles?.display_name || "Resident", created_at: r.created_at, sub_issue_id: r.sub_issue_id || null,
+      reportType: "card_event" as const, reportId: r.id, authorId: r.user_id,
     })),
     ...relatedPosts.map((p) => ({
       id: "fp" + p.id,
       body: (p.body || "").slice(0, 220) + ((p.body || "").length > 220 ? "…" : ""),
       stance: "neutral", name: p.profiles?.display_name || "Resident", created_at: p.created_at,
       sub_issue_id: null, tag: "from the feed",
+      reportType: "post" as const, reportId: p.id, authorId: p.author_id,
     })),
   ];
   const hasOfficial = !!(card?.official_response || reportInfo?.official_response);

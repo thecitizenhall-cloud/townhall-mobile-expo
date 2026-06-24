@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { T } from "../lib/theme";
 import { SITE_URL } from "../lib/config";
+import ReportButton from "./ReportButton";
 
 export type Stance = "support" | "oppose" | "neutral";
 
@@ -26,6 +27,11 @@ export type KitComment = {
   stance?: string | null;
   sub_issue_id?: string | null;
   tag?: string | null;
+  // Set by each host screen's adapter so the comment can be reported. A comment
+  // may be an issue_reply, a card_event, or a mapped-in post.
+  reportType?: "issue_reply" | "card_event" | "post" | null;
+  reportId?: string | null;
+  authorId?: string | null;
 };
 
 export type SubIssue = { id: string; title: string };
@@ -52,7 +58,8 @@ export function groupByStance(comments: KitComment[]): Record<Stance, KitComment
 }
 
 // One comment, rendered uniformly.
-function Post({ c, timeAgo }: { c: KitComment; timeAgo?: (d?: string | null) => string }) {
+function Post({ c, timeAgo, currentUser }: { c: KitComment; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
+  const canReport = c.reportType && c.reportId && currentUser && c.authorId !== currentUser.id;
   return (
     <View style={s.post}>
       <Text style={s.postBody}>{c.body}</Text>
@@ -60,13 +67,18 @@ function Post({ c, timeAgo }: { c: KitComment; timeAgo?: (d?: string | null) => 
         <Text style={s.postMetaText}>{c.name || "Resident"}</Text>
         {c.created_at ? <Text style={s.postMetaText}> · {timeAgo ? timeAgo(c.created_at) : ""}</Text> : null}
         {c.tag ? <Text style={[s.postMetaText, { color: T.amberHi }]}> · {c.tag}</Text> : null}
+        {canReport ? (
+          <View style={{ marginLeft: "auto" }}>
+            <ReportButton contentType={c.reportType as any} contentId={c.reportId as string} currentUserId={currentUser.id} />
+          </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
 // The Support / Oppose / Neutral lanes for one subsection's comments.
-function StanceLanes({ comments, timeAgo }: { comments: KitComment[]; timeAgo?: (d?: string | null) => string }) {
+function StanceLanes({ comments, timeAgo, currentUser }: { comments: KitComment[]; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
   const g = groupByStance(comments);
   return (
     <>
@@ -81,7 +93,7 @@ function StanceLanes({ comments, timeAgo }: { comments: KitComment[]; timeAgo?: 
           {g[st.key].length === 0 ? (
             <Text style={s.none}>{st.none}</Text>
           ) : (
-            g[st.key].map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} />)
+            g[st.key].map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)
           )}
         </View>
       ))}
@@ -238,7 +250,7 @@ export default function CommentKit({
       {/* Main discussion */}
       <View style={s.card}>
         <Text style={s.cardTitle}>Main discussion · {bySub.main.length}</Text>
-        <StanceLanes comments={bySub.main} timeAgo={timeAgo} />
+        <StanceLanes comments={bySub.main} timeAgo={timeAgo} currentUser={currentUser} />
         {composer(null)}
       </View>
 
@@ -249,7 +261,7 @@ export default function CommentKit({
             <Text style={s.tag}>SUB-ISSUE</Text>
             <Text style={s.cardTitle}>{sub.title} · {bySub[sub.id].length}</Text>
           </View>
-          <StanceLanes comments={bySub[sub.id]} timeAgo={timeAgo} />
+          <StanceLanes comments={bySub[sub.id]} timeAgo={timeAgo} currentUser={currentUser} />
           {composer(sub.id)}
         </View>
       ))}
