@@ -70,8 +70,9 @@ export default function OnboardingWelcome() {
         </Text>
       </Text>
       <Text style={s.sub}>
-        Townhall will tell you when something changes on anything you follow. Here's what's
-        happening right now.
+        This isn't a feed to scroll — it's your council's real decisions in plain English, the
+        official record quoted first. Follow any item and we'll tell you when it moves. Verified
+        neighbors only; your vote is never tied to your name.
       </Text>
 
       {cards.length > 0 && (
