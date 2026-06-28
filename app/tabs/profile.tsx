@@ -6,7 +6,7 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { reservedNameError } from "../../lib/displayName";
-import { goVerify } from "../../lib/residency";
+import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
 
@@ -58,8 +58,7 @@ export default function ProfileScreen() {
       setProfile({ ...(prof || {}), email: user.email });
       setNameDraft(prof?.display_name || "");
 
-      const { data: proof } = await supabase.from("residency_proofs").select("id").eq("user_id", user.id).maybeSingle();
-      setVerified(!!proof);
+      setVerified(await hasResidencyProof(user.id, prof?.neighborhood_id ?? null));
 
       const { count: posts } = await supabase.from("posts").select("*", { count: "exact", head: true }).eq("author_id", user.id);
       setPostCount(posts || 0);

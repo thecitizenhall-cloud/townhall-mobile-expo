@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import {
   watchConcernCard, unwatchConcernCard, recordConcernCardView,
 } from "../../lib/concernCards";
-import { goVerify } from "../../lib/residency";
+import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
 import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
@@ -97,8 +97,7 @@ export default function ConcernCardDetail() {
     const { data: { user: u } } = await supabase.auth.getUser();
     setUser(u);
     if (u) {
-      const { data: proof } = await supabase.from("residency_proofs").select("id").eq("user_id", u.id).maybeSingle();
-      setVerified(!!proof);
+      setVerified(await isVerifiedForCurrentNeighborhood(u.id));
       const { data: rr } = await supabase.from("resident_reports")
         .select("id, reporter_id, status, report_type, location_text, photo_url, official_response, official_response_name, official_response_email, responded_at")
         .eq("concern_card_id", id).maybeSingle();

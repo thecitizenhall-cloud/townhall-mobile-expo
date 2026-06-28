@@ -12,12 +12,15 @@
 
 import { supabase } from "./supabase";
 
-export const ATTESTATION_VERSION = "v1-2026-06";
+export const ATTESTATION_VERSION = "v2-2026-06";
 
 export function attestationStatement(townName?: string): string {
   const where = townName || "this municipality";
-  return `I affirm, under penalty of perjury, that I am a resident of ${where} ` +
-    `and that this is my genuine place of residence.`;
+  return `I swear that ${where} is my real home — the place where I actually live, ` +
+    `not a workplace, a second home, or a town I'm only passing through or once lived in. ` +
+    `I understand that a verified resident's voice carries real weight here, and that ` +
+    `claiming residency falsely is perjury and grounds for permanent removal. ` +
+    `I make this statement knowingly, under penalty of perjury.`;
 }
 
 // Non-fatal by design: verification has already succeeded by the time this runs.

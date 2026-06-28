@@ -383,7 +383,9 @@ export default function IssueDetail() {
   async function handleVote() {
     if (!currentUser || issue?.user_has_voted) return;
     const residencyProof = await getResidencyProof(currentUser.id);
-    const { valid, reason } = validateProof(residencyProof);
+    const { data: voteProf } = await supabase
+      .from("profiles").select("neighborhood_id").eq("id", currentUser.id).maybeSingle();
+    const { valid, reason } = validateProof(residencyProof, voteProf?.neighborhood_id ?? null);
     if (!valid) { showToast(reason || "Verify your residency to vote"); return; }
     const token = await getToken();
     if (!token) { showToast("Session expired — please sign in again"); return; }

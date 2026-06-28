@@ -116,7 +116,7 @@ export default function FeedScreen() {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       setProfile(p);
       setIsFirstSession(!p?.first_session_completed_at);
-      setVerified(await hasResidencyProof(user.id));
+      setVerified(await hasResidencyProof(user.id, p?.neighborhood_id ?? null));
 
       // Aggregated civic items from the shared web route (concern cards, bulletins…).
       let civicItems: CivicItem[] = [];
