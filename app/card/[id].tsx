@@ -97,23 +97,66 @@ export default function ConcernCardDetail() {
   async function load() {
     const u = await getCurrentUser();  // local read; no getUser network round-trip on mount
     setUser(u);
-    if (u) {
-      setVerified(await isVerifiedForCurrentNeighborhood(u.id));
-      const { data: rr } = await supabase.from("resident_reports")
-        .select("id, reporter_id, status, report_type, location_text, photo_url, official_response, official_response_name, official_response_email, responded_at")
-        .eq("concern_card_id", id).maybeSingle();
-      if (rr) { setReportInfo(rr); if (rr.reporter_id === u.id) setReportRecord(rr); }
-    }
 
-    const { data: c } = await supabase.from("concern_cards").select("*").eq("id", id).maybeSingle();
+    // ── Phase 1: verification + report origin (need u) + card row (needs id) ──
+    const [verifiedRes, { data: rr }, { data: c }] = await Promise.all([
+      u ? isVerifiedForCurrentNeighborhood(u.id) : Promise.resolve(false),
+      u
+        ? supabase.from("resident_reports")
+            .select("id, reporter_id, status, report_type, location_text, photo_url, official_response, official_response_name, official_response_email, responded_at")
+            .eq("concern_card_id", id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase.from("concern_cards").select("*").eq("id", id).maybeSingle(),
+    ]);
+
+    if (u) setVerified(verifiedRes);
+    if (rr) { setReportInfo(rr); if (rr.reporter_id === u?.id) setReportRecord(rr); }
     setCard(c);
 
     if (c) {
-      const { data: related } = await supabase.from("concern_cards")
-        .select("id, meeting_date, source_url, pass1_confidence, outcome_signal, meeting_id, meetings(meeting_type)")
-        .eq("municipality_id", c.municipality_id)
-        .ilike("title", `%${c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30)}%`)
-        .order("meeting_date", { ascending: true });
+      if (u) recordConcernCardView(u.id, id); // fire-and-forget, off the paint path
+      const titleWords = c?.title?.split(" ").filter((w: string) => w.length > 4).slice(0, 3).join(" | ") || "";
+
+      // ── Phase 2: everything scoped to the known card, in parallel ────────
+      const [
+        { data: related },
+        { data: watch },
+        { data: posts },
+        { data: related311 },
+        { data: evts },
+        { data: subs, error: subErr },
+        { data: anns },
+      ] = await Promise.all([
+        supabase.from("concern_cards")
+          .select("id, meeting_date, source_url, pass1_confidence, outcome_signal, meeting_id, meetings(meeting_type)")
+          .eq("municipality_id", c.municipality_id)
+          .ilike("title", `%${c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30)}%`)
+          .order("meeting_date", { ascending: true }),
+        supabase.from("card_watches")
+          .select("id").eq("user_id", u?.id || "").eq("concern_card_id", id).maybeSingle(),
+        (titleWords && c?.municipality_id)
+          ? supabase.from("posts")
+              .select("*, profiles(display_name, trust_tier)")
+              .textSearch("body", titleWords.split(" | ")[0], { type: "plain" })
+              .order("created_at", { ascending: false }).limit(5)
+          : Promise.resolve({ data: [] }),
+        (c?.impact_type && c?.municipality_id)
+          ? supabase.from("concern_cards")
+              .select("*").eq("municipality_id", c.municipality_id).eq("impact_type", c.impact_type)
+              .neq("id", id).eq("surfaces_to_feed", true)
+              .order("meeting_date", { ascending: false }).limit(4)
+          : Promise.resolve({ data: [] }),
+        supabase.from("card_events")
+          .select("*, profiles:user_id(display_name)")
+          .eq("concern_card_id", id).eq("event_type", "comment").is("removed_at", null)
+          .order("created_at", { ascending: false }).limit(50),
+        supabase.from("card_subissues")
+          .select("id, title, created_at").eq("concern_card_id", id).order("created_at", { ascending: true }),
+        supabase.from("expert_annotations")
+          .select("id, annotation_text, corrected_impact_type, corrected_outcome_signal, created_at, profiles:expert_user_id(expert_handle, expert_credential)")
+          .eq("concern_card_id", id).order("created_at", { ascending: false }),
+      ]);
+
       const seen = new Set<string>();
       setMeetings((related || []).filter((m: any) => {
         const key = m.source_url || m.id;
@@ -121,44 +164,11 @@ export default function ConcernCardDetail() {
         seen.add(key);
         return true;
       }));
-
-      if (u) recordConcernCardView(u.id, id);
-
-      const { data: watch } = await supabase.from("card_watches")
-        .select("id").eq("user_id", u?.id || "").eq("concern_card_id", id).maybeSingle();
       setWatched(!!watch);
-
-      const titleWords = c?.title?.split(" ").filter((w: string) => w.length > 4).slice(0, 3).join(" | ") || "";
-      if (titleWords && c?.municipality_id) {
-        const { data: posts } = await supabase.from("posts")
-          .select("*, profiles(display_name, trust_tier)")
-          .textSearch("body", titleWords.split(" | ")[0], { type: "plain" })
-          .order("created_at", { ascending: false }).limit(5);
-        setRelatedPosts(posts || []);
-      }
-
-      if (c?.impact_type && c?.municipality_id) {
-        const { data: related311 } = await supabase.from("concern_cards")
-          .select("*").eq("municipality_id", c.municipality_id).eq("impact_type", c.impact_type)
-          .neq("id", id).eq("surfaces_to_feed", true)
-          .order("meeting_date", { ascending: false }).limit(4);
-        setRelatedCards(related311 || []);
-      }
-
-      const { data: evts } = await supabase.from("card_events")
-        .select("*, profiles:user_id(display_name)")
-        .eq("concern_card_id", id).eq("event_type", "comment")
-        .is("removed_at", null)
-        .order("created_at", { ascending: false }).limit(50);
+      setRelatedPosts(posts || []);
+      setRelatedCards(related311 || []);
       setReplies(evts || []);
-
-      const { data: subs, error: subErr } = await supabase.from("card_subissues")
-        .select("id, title, created_at").eq("concern_card_id", id).order("created_at", { ascending: true });
       if (!subErr) setCardSubs(subs || []);
-
-      const { data: anns } = await supabase.from("expert_annotations")
-        .select("id, annotation_text, corrected_impact_type, corrected_outcome_signal, created_at, profiles:expert_user_id(expert_handle, expert_credential)")
-        .eq("concern_card_id", id).order("created_at", { ascending: false });
       setAnnotations(anns || []);
     }
     setLoading(false);
