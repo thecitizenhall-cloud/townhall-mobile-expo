@@ -132,8 +132,10 @@ export default function ConcernCardDetail() {
           .eq("municipality_id", c.municipality_id)
           .ilike("title", `%${c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30)}%`)
           .order("meeting_date", { ascending: true }),
-        supabase.from("card_watches")
-          .select("id").eq("user_id", u?.id || "").eq("concern_card_id", id).maybeSingle(),
+        u
+          ? supabase.from("card_watches")
+              .select("id").eq("user_id", u.id).eq("concern_card_id", id).maybeSingle()
+          : Promise.resolve({ data: null }),
         (titleWords && c?.municipality_id)
           ? supabase.from("posts")
               .select("*, profiles(display_name, trust_tier)")
@@ -146,16 +148,37 @@ export default function ConcernCardDetail() {
               .neq("id", id).eq("surfaces_to_feed", true)
               .order("meeting_date", { ascending: false }).limit(4)
           : Promise.resolve({ data: [] }),
+        // No profiles embed: card_events.user_id has NO FK to profiles, so the
+        // PostgREST join 400s. Author names are hydrated in a second step below.
         supabase.from("card_events")
-          .select("*, profiles:user_id(display_name)")
+          .select("*")
           .eq("concern_card_id", id).eq("event_type", "comment").is("removed_at", null)
           .order("created_at", { ascending: false }).limit(50),
         supabase.from("card_subissues")
           .select("id, title, created_at").eq("concern_card_id", id).order("created_at", { ascending: true }),
+        // Same no-FK situation (expert_user_id has no FK to profiles) — hydrate below.
         supabase.from("expert_annotations")
-          .select("id, annotation_text, corrected_impact_type, corrected_outcome_signal, created_at, profiles:expert_user_id(expert_handle, expert_credential)")
+          .select("id, annotation_text, corrected_impact_type, corrected_outcome_signal, created_at, expert_user_id")
           .eq("concern_card_id", id).order("created_at", { ascending: false }),
       ]);
+
+      // Hydrate author profiles for comments + annotations in one batched read —
+      // replaces the broken embedded joins (card_events / expert_annotations lack
+      // the FK to profiles that PostgREST embedding requires).
+      const evtRows: any[] = evts || [];
+      const annRows: any[] = anns || [];
+      const authorIds = [...new Set([
+        ...evtRows.map((e) => e.user_id),
+        ...annRows.map((a) => a.expert_user_id),
+      ].filter(Boolean))];
+      const profMap: Record<string, any> = {};
+      if (authorIds.length) {
+        const { data: profs } = await supabase.from("profiles")
+          .select("id, display_name, expert_handle, expert_credential").in("id", authorIds);
+        for (const p of (profs || [])) profMap[p.id] = p;
+      }
+      const evtsHydrated = evtRows.map((e) => ({ ...e, profiles: profMap[e.user_id] || null }));
+      const annsHydrated = annRows.map((a) => ({ ...a, profiles: profMap[a.expert_user_id] || null }));
 
       const seen = new Set<string>();
       setMeetings((related || []).filter((m: any) => {
@@ -167,9 +190,9 @@ export default function ConcernCardDetail() {
       setWatched(!!watch);
       setRelatedPosts(posts || []);
       setRelatedCards(related311 || []);
-      setReplies(evts || []);
+      setReplies(evtsHydrated);
       if (!subErr) setCardSubs(subs || []);
-      setAnnotations(anns || []);
+      setAnnotations(annsHydrated);
     }
     setLoading(false);
   }
@@ -208,9 +231,13 @@ export default function ConcernCardDetail() {
     const { data, error } = await supabase.from("card_events").insert({
       concern_card_id: id, neighborhood_id: card?.municipality_id || "unknown",
       event_type: "comment", user_id: user.id, body: body.trim(), stance, sub_issue_id: subId || null,
-    }).select("*, profiles:user_id(display_name)").single();
+    }).select("*").single();  // no profiles embed — card_events has no FK to profiles (400s)
     if (error) return;
-    if (data) setReplies((prev) => (prev.some((r) => r.id === data.id) ? prev : [data, ...prev]));
+    // Attach author name locally (it's the current user); reloads hydrate from profiles.
+    if (data) {
+      const withAuthor = { ...data, profiles: { display_name: user.user_metadata?.display_name || null } };
+      setReplies((prev) => (prev.some((r) => r.id === withAuthor.id) ? prev : [withAuthor, ...prev]));
+    }
   }
 
   async function createCardSubIssue(title: string) {
