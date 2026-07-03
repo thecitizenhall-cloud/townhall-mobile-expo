@@ -106,61 +106,85 @@ export default function YourIssuesScreen() {
       if (!u) { setLoading(false); setRefreshing(false); return; }
       setUser(u);
 
-      const { data: posts } = await supabase.from("posts")
-        .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct)")
-        .eq("author_id", u.id).order("created_at", { ascending: false }).limit(50);
+      // ── Phase 1: everything that needs only u.id, in parallel ─────────────
+      // These six reads have no interdependencies; fire them together instead
+      // of serially awaiting each (was ~6 round-trips of latency).
+      const [
+        { data: posts },
+        { data: votes },
+        { data: prof },
+        { data: watched },
+        { data: cardWatches },
+        activity,
+      ] = await Promise.all([
+        supabase.from("posts")
+          .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct)")
+          .eq("author_id", u.id).order("created_at", { ascending: false }).limit(50),
+        supabase.from("votes")
+          .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct, source_label, created_at, updated_at)")
+          .eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
+        supabase.from("profiles")
+          .select("neighborhood_id, previous_session_at").eq("id", u.id).maybeSingle(),
+        supabase.from("watched_concern_cards")
+          .select("*, civic_issues(*)").eq("user_id", u.id).not("issue_id", "is", null).order("watched_at", { ascending: false }),
+        supabase.from("card_watches")
+          .select("concern_card_id, created_at").eq("user_id", u.id).order("created_at", { ascending: false }),
+        getWeeklyActivity(u.id),
+      ]);
+
       setMyPosts(posts || []);
-
-      const { data: votes } = await supabase.from("votes")
-        .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct, source_label, created_at, updated_at)")
-        .eq("user_id", u.id).order("created_at", { ascending: false }).limit(50);
       setMyVotes(votes || []);
-
-      const { data: prof } = await supabase.from("profiles")
-        .select("neighborhood_id, previous_session_at").eq("id", u.id).maybeSingle();
-
-      if (prof?.neighborhood_id) {
-        const { data: nbhdIssues } = await supabase.from("civic_issues")
-          .select("*").eq("neighborhood_id", prof.neighborhood_id).is("removed_at", null).order("voice_count", { ascending: false }).limit(5);
-        setNeighborhoodIssues(nbhdIssues || []);
-      }
-
-      const { data: watched } = await supabase.from("watched_concern_cards")
-        .select("*, civic_issues(*)").eq("user_id", u.id).not("issue_id", "is", null).order("watched_at", { ascending: false });
       setWatchedIssues((watched || []).map((w: any) => w.civic_issues).filter(Boolean));
+      setWeeklyActivity(activity);
 
-      // Watched concern cards — two-step to avoid RLS join issues.
-      const { data: cardWatches } = await supabase.from("card_watches")
-        .select("concern_card_id, created_at").eq("user_id", u.id).order("created_at", { ascending: false });
-      let watchedCardData: any[] = [];
-      if (cardWatches?.length) {
-        const { data: cards } = await supabase.from("concern_cards")
-          .select("*").in("id", cardWatches.map((w: any) => w.concern_card_id)).eq("archived", false).is("removed_at", null);
-        watchedCardData = cards || [];
-        if (watchedCardData.length) { setConcernCards(watchedCardData); setCardsAreFallback(false); }
-      }
-      if (prof?.neighborhood_id && !watchedCardData.length) {
-        const { data: hoodData } = await supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle();
-        if (hoodData?.slug) {
-          const { data: scored } = await supabase.from("neighborhood_scores")
-            .select("relevance_score, concern_cards(*)").eq("neighborhood_id", hoodData.slug)
-            .eq("concern_cards.surfaces_to_feed", true).eq("concern_cards.archived", false)
-            .order("relevance_score", { ascending: false }).limit(5);
-          const topCards = (scored || []).map((ns: any) => ns.concern_cards).filter(Boolean);
-          if (topCards.length) { setConcernCards(topCards); setCardsAreFallback(true); }
-        }
-      }
+      // ── Phase 2: reads that depend on phase-1 results, in parallel ────────
+      // Guarded branches resolve to empty so the Promise.all shape is stable.
+      const watchedCardIds = (cardWatches || []).map((w: any) => w.concern_card_id);
+      const watchedIssueIds = (watched || []).map((w: any) => w.issue_id).filter(Boolean);
 
-      setWeeklyActivity(await getWeeklyActivity(u.id));
+      const [
+        { data: nbhdIssues },
+        { data: watchedCards },
+        { data: hoodData },
+        { data: changed },
+      ] = await Promise.all([
+        prof?.neighborhood_id
+          ? supabase.from("civic_issues")
+              .select("*").eq("neighborhood_id", prof.neighborhood_id).is("removed_at", null).order("voice_count", { ascending: false }).limit(5)
+          : Promise.resolve({ data: [] as any[] }),
+        watchedCardIds.length
+          ? supabase.from("concern_cards")
+              .select("*").in("id", watchedCardIds).eq("archived", false).is("removed_at", null)
+          : Promise.resolve({ data: [] as any[] }),
+        prof?.neighborhood_id
+          ? supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle()
+          : Promise.resolve({ data: null as any }),
+        (prof?.previous_session_at && watchedIssueIds.length)
+          ? supabase.from("civic_issues")
+              .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+
+      if (prof?.neighborhood_id) setNeighborhoodIssues(nbhdIssues || []);
+
+      const watchedCardData: any[] = watchedCards || [];
+      if (watchedCardData.length) { setConcernCards(watchedCardData); setCardsAreFallback(false); }
+
+      // ── Phase 3: fallback concern cards by slug (only if no real watches) ─
+      // neighborhood_scores needs the slug from phase 2, so it can't join the
+      // batch above. Skipped entirely when the resident already watches cards.
+      if (hoodData?.slug && !watchedCardData.length) {
+        const { data: scored } = await supabase.from("neighborhood_scores")
+          .select("relevance_score, concern_cards(*)").eq("neighborhood_id", hoodData.slug)
+          .eq("concern_cards.surfaces_to_feed", true).eq("concern_cards.archived", false)
+          .order("relevance_score", { ascending: false }).limit(5);
+        const topCards = (scored || []).map((ns: any) => ns.concern_cards).filter(Boolean);
+        if (topCards.length) { setConcernCards(topCards); setCardsAreFallback(true); }
+      }
 
       // Since-last-visit changes, diffed against previous_session_at.
-      const watchedIssueIds = (watched || []).map((w: any) => w.issue_id).filter(Boolean);
       if (prof?.previous_session_at) {
-        if (watchedIssueIds.length) {
-          const { data: changed } = await supabase.from("civic_issues")
-            .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds);
-          setSinceLastVisit(changed || []);
-        }
+        setSinceLastVisit(changed || []);
         // Watched CONCERN CARDS whose outcome flipped since last visit — the
         // automated civic-engine round trip's "return" leg. The engine stamps
         // outcome_changed_at when outcome_signal changes; surface it here so the
