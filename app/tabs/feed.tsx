@@ -117,17 +117,19 @@ export default function FeedScreen() {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       setProfile(p);
       setIsFirstSession(!p?.first_session_completed_at);
-      setVerified(await hasResidencyProof(user.id, p?.neighborhood_id ?? null));
 
-      // Aggregated civic items from the shared web route (concern cards, bulletins…).
-      let civicItems: CivicItem[] = [];
-      try {
-        const qs = new URLSearchParams();
-        if (p?.neighborhood_id) qs.set("neighborhood_id", p.neighborhood_id);
-        const res = await fetch(`${SITE_URL}/api/civic-feed?${qs.toString()}`);
-        if (res.ok) civicItems = (await res.json()).items ?? [];
-      } catch { /* degrade to posts-only */ }
-      setCivic(civicItems);
+      // Aggregated civic items from the shared web route (concern cards,
+      // bulletins…). Wrapped so a failed fetch degrades to posts-only without
+      // rejecting the batch below.
+      const civicPromise = (async (): Promise<CivicItem[]> => {
+        try {
+          const qs = new URLSearchParams();
+          if (p?.neighborhood_id) qs.set("neighborhood_id", p.neighborhood_id);
+          const res = await fetch(`${SITE_URL}/api/civic-feed?${qs.toString()}`);
+          if (res.ok) return (await res.json()).items ?? [];
+        } catch { /* degrade to posts-only */ }
+        return [];
+      })();
 
       // Resident posts (with author profile), scoped to the neighborhood.
       // No removed_at/hidden_at filter — those columns don't exist in the live
@@ -137,8 +139,29 @@ export default function FeedScreen() {
         .is("removed_at", null)
         .order("created_at", { ascending: false }).limit(50);
       if (p?.neighborhood_id) postQ = postQ.eq("neighborhood_id", p.neighborhood_id);
-      const { data: postRows } = await postQ;
-      let withVotes = postRows || [];
+
+      // ── Everything that needs only `p`/user.id, in parallel ────────────
+      // (verification, civic feed, posts, open issues, both watch tables) —
+      // previously a long serial chain with issues + watch state stranded last.
+      const [verified, civicItems, postRes, issRes, wiRes, wcRes] = await Promise.all([
+        hasResidencyProof(user.id, p?.neighborhood_id ?? null),
+        civicPromise,
+        postQ,
+        supabase.from("civic_issues").select("*").neq("status", "resolved").order("voice_count", { ascending: false }).limit(20),
+        supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
+        supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
+      ]);
+
+      setVerified(verified);
+      setCivic(civicItems);
+      setIssues(issRes.data || []);
+      setWatchedIds(new Set([
+        ...((wiRes.data || []).map((w: any) => w.issue_id).filter(Boolean)),
+        ...((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)),
+      ]));
+
+      // Upvote state depends on the fetched posts, so it follows the batch.
+      let withVotes = postRes.data || [];
       if (withVotes.length) {
         const { data: upvotes } = await supabase.from("post_upvotes")
           .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
@@ -146,21 +169,6 @@ export default function FeedScreen() {
         withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
       }
       setPosts(withVotes);
-
-      // Issues — first-session fallback + escalation target list.
-      const { data: iss } = await supabase.from("civic_issues")
-        .select("*").neq("status", "resolved").order("voice_count", { ascending: false }).limit(20);
-      setIssues(iss || []);
-
-      // Watch state across both watch tables.
-      const [{ data: wi }, { data: wc }] = await Promise.all([
-        supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
-        supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
-      ]);
-      setWatchedIds(new Set([
-        ...((wi || []).map((w: any) => w.issue_id).filter(Boolean)),
-        ...((wc || []).map((w: any) => w.concern_card_id).filter(Boolean)),
-      ]));
     } finally {
       setLoading(false);
       setRefreshing(false);
