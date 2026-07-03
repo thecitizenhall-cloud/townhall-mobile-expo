@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { getCurrentUser } from "../../lib/sessionUser";
 import { getWeeklyActivity, WeeklyActivity } from "../../lib/concernCards";
 import { T } from "../../lib/theme";
 import ConcernCardItem from "../../components/ConcernCardItem";
@@ -56,7 +57,9 @@ function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highligh
 function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
   const now = OUTCOME_LABEL[card.outcome_signal as string] || card.outcome_signal || "Updated";
   const when = card.outcome_changed_at
-    ? new Date(card.outcome_changed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    // outcome_changed_at is a UTC-midnight date; format in UTC so it doesn't
+    // slip a day earlier in western timezones.
+    ? new Date(card.outcome_changed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
     : null;
   return (
     <Pressable style={[s.issue, s.issueHighlight]} onPress={onPress}>
@@ -99,7 +102,7 @@ export default function YourIssuesScreen() {
   async function load(refresh = false) {
     if (refresh) setRefreshing(true); else setLoading(true);
     try {
-      const { data: { user: u } } = await supabase.auth.getUser();
+      const u = await getCurrentUser();  // local read; no getUser network round-trip on mount
       if (!u) { setLoading(false); setRefreshing(false); return; }
       setUser(u);
 

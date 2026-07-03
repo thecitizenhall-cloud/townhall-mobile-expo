@@ -7,6 +7,7 @@ import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
+import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
@@ -109,7 +110,7 @@ export default function FeedScreen() {
   async function loadFeed(refresh = false) {
     if (refresh) setRefreshing(true); else setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
       if (!user) { setLoading(false); setRefreshing(false); return; }
 
