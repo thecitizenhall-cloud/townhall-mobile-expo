@@ -20,7 +20,7 @@ const STATUS_META: Record<string, { bg: string; color: string; label: string }> 
 // watched card's outcome when it returns to the resident on "Since last visit".
 const OUTCOME_LABEL: Record<string, string> = {
   pending: "Pending", introduced: "Introduced", deferred: "Deferred",
-  approved: "Approved", denied: "Denied",
+  approved: "Approved", denied: "Denied", discussed: "Discussed", tabled: "Tabled",
 };
 
 // A single issue row, reused across the "following", "since last visit", and
@@ -56,6 +56,9 @@ function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highligh
 // civic-engine round trip's "return" leg (parity with web YourIssuesScreen).
 function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
   const now = OUTCOME_LABEL[card.outcome_signal as string] || card.outcome_signal || "Updated";
+  // Prior outcome (from the notification payload) lets us show the *movement*,
+  // not just where it landed — the round trip made legible.
+  const prev = card._prevOutcome ? (OUTCOME_LABEL[card._prevOutcome as string] || card._prevOutcome) : null;
   const when = card.outcome_changed_at
     // outcome_changed_at is a UTC-midnight date; format in UTC so it doesn't
     // slip a day earlier in western timezones.
@@ -66,7 +69,7 @@ function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
       <Text style={s.issueTitle}>{card.title}</Text>
       <View style={s.issueRow}>
         <Text style={[s.statusPill, { backgroundColor: T.amberLo, color: T.amberHi, borderColor: T.amberMid }]}>
-          Outcome: {now}
+          {prev ? `${prev} → ${now}` : `Outcome: ${now}`}
         </Text>
         <Text style={s.updated}>{when ? `Decided ${when}` : "Outcome changed"}</Text>
       </View>
@@ -147,6 +150,7 @@ export default function YourIssuesScreen() {
         { data: watchedCards },
         { data: hoodData },
         { data: changed },
+        { data: movedNotifs },
       ] = await Promise.all([
         prof?.neighborhood_id
           ? supabase.from("civic_issues")
@@ -162,6 +166,16 @@ export default function YourIssuesScreen() {
         (prof?.previous_session_at && watchedIssueIds.length)
           ? supabase.from("civic_issues")
               .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds)
+          : Promise.resolve({ data: [] as any[] }),
+        // watched_item_moved notifications since last visit — the notifier records
+        // the full old→new outcome transition in the payload, which the concern_cards
+        // row can't reconstruct once previous_outcome_signal is reset. Used to show
+        // the *movement* ("Deferred → Approved"), not just the endpoint.
+        prof?.previous_session_at
+          ? supabase.from("notifications")
+              .select("payload, created_at").eq("user_id", u.id)
+              .eq("type", "watched_item_moved").gte("created_at", prof.previous_session_at)
+              .order("created_at", { ascending: false })
           : Promise.resolve({ data: [] as any[] }),
       ]);
 
@@ -191,9 +205,16 @@ export default function YourIssuesScreen() {
         // outcome actually comes back to the resident. (card_watches — separate
         // from the watched_concern_cards/civic_issues path above.)
         const base = new Date(prof.previous_session_at).getTime();
-        const movedCards = (watchedCardData || []).filter((c: any) =>
-          c.outcome_changed_at && new Date(c.outcome_changed_at).getTime() > base
-        );
+        // Map card_id → prior outcome from the notification payload (newest-first,
+        // so the first entry per card is the most recent move).
+        const priorByCard: Record<string, string | null> = {};
+        for (const n of (movedNotifs || [])) {
+          const cid = n.payload?.concern_card_id;
+          if (cid && !(cid in priorByCard)) priorByCard[cid] = n.payload?.old_outcome || null;
+        }
+        const movedCards = (watchedCardData || [])
+          .filter((c: any) => c.outcome_changed_at && new Date(c.outcome_changed_at).getTime() > base)
+          .map((c: any) => ({ ...c, _prevOutcome: priorByCard[c.id] || null }));
         setSinceLastVisitCards(movedCards);
       }
     } catch (e) {
