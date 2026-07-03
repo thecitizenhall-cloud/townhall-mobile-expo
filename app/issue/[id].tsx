@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { getCurrentUser } from "../../lib/sessionUser";
 import { getResidencyProof, validateProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
@@ -150,7 +151,7 @@ export default function IssueDetail() {
   async function load() {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
 
       const { data: iss } = await supabase.from("civic_issues").select("*").eq("id", issueId).maybeSingle();

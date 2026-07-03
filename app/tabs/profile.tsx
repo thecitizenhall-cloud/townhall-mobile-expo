@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { getCurrentUser } from "../../lib/sessionUser";
 import { reservedNameError } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
@@ -51,7 +52,7 @@ export default function ProfileScreen() {
 
   async function load() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       if (!user) { setLoading(false); return; }
 
       const { data: prof } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();

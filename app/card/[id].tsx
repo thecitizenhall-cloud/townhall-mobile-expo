@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { getCurrentUser } from "../../lib/sessionUser";
 import {
   watchConcernCard, unwatchConcernCard, recordConcernCardView,
 } from "../../lib/concernCards";
@@ -94,7 +95,7 @@ export default function ConcernCardDetail() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   async function load() {
-    const { data: { user: u } } = await supabase.auth.getUser();
+    const u = await getCurrentUser();  // local read; no getUser network round-trip on mount
     setUser(u);
     if (u) {
       setVerified(await isVerifiedForCurrentNeighborhood(u.id));
