@@ -15,6 +15,13 @@ const STATUS_META: Record<string, { bg: string; color: string; label: string }> 
   resolved: { bg: "#1A2A1A", color: T.tealHi, label: "Resolved" },
 };
 
+// Civic-engine concern-card outcome signals (analyzer PASS1). Used to render a
+// watched card's outcome when it returns to the resident on "Since last visit".
+const OUTCOME_LABEL: Record<string, string> = {
+  pending: "Pending", introduced: "Introduced", deferred: "Deferred",
+  approved: "Approved", denied: "Denied",
+};
+
 // A single issue row, reused across the "following", "since last visit", and
 // "neighborhood" sections. `highlight` draws the amber since-last-visit border.
 function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highlight?: boolean; updated?: boolean; onPress: () => void }) {
@@ -44,6 +51,27 @@ function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highligh
   );
 }
 
+// A watched CONCERN CARD whose outcome flipped since last visit — the automated
+// civic-engine round trip's "return" leg (parity with web YourIssuesScreen).
+function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
+  const now = OUTCOME_LABEL[card.outcome_signal as string] || card.outcome_signal || "Updated";
+  const when = card.outcome_changed_at
+    ? new Date(card.outcome_changed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : null;
+  return (
+    <Pressable style={[s.issue, s.issueHighlight]} onPress={onPress}>
+      <Text style={s.issueTitle}>{card.title}</Text>
+      <View style={s.issueRow}>
+        <Text style={[s.statusPill, { backgroundColor: T.amberLo, color: T.amberHi, borderColor: T.amberMid }]}>
+          Outcome: {now}
+        </Text>
+        <Text style={s.updated}>{when ? `Decided ${when}` : "Outcome changed"}</Text>
+      </View>
+      {card.source_quote ? <Text style={s.cardQuote}>“{card.source_quote}”</Text> : null}
+    </Pressable>
+  );
+}
+
 export default function YourIssuesScreen() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +82,7 @@ export default function YourIssuesScreen() {
   const [neighborhoodIssues, setNeighborhoodIssues] = useState<any[]>([]);
   const [watchedIssues, setWatchedIssues] = useState<any[]>([]);
   const [sinceLastVisit, setSinceLastVisit] = useState<any[]>([]);
+  const [sinceLastVisitCards, setSinceLastVisitCards] = useState<any[]>([]);
   const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity | null>(null);
   const [concernCards, setConcernCards] = useState<any[]>([]);
   const [cardsAreFallback, setCardsAreFallback] = useState(false);
@@ -123,10 +152,22 @@ export default function YourIssuesScreen() {
 
       // Since-last-visit changes, diffed against previous_session_at.
       const watchedIssueIds = (watched || []).map((w: any) => w.issue_id).filter(Boolean);
-      if (prof?.previous_session_at && watchedIssueIds.length) {
-        const { data: changed } = await supabase.from("civic_issues")
-          .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds);
-        setSinceLastVisit(changed || []);
+      if (prof?.previous_session_at) {
+        if (watchedIssueIds.length) {
+          const { data: changed } = await supabase.from("civic_issues")
+            .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds);
+          setSinceLastVisit(changed || []);
+        }
+        // Watched CONCERN CARDS whose outcome flipped since last visit — the
+        // automated civic-engine round trip's "return" leg. The engine stamps
+        // outcome_changed_at when outcome_signal changes; surface it here so the
+        // outcome actually comes back to the resident. (card_watches — separate
+        // from the watched_concern_cards/civic_issues path above.)
+        const base = new Date(prof.previous_session_at).getTime();
+        const movedCards = (watchedCardData || []).filter((c: any) =>
+          c.outcome_changed_at && new Date(c.outcome_changed_at).getTime() > base
+        );
+        setSinceLastVisitCards(movedCards);
       }
     } catch (e) {
       console.error("YourIssues load error:", e);
@@ -142,7 +183,7 @@ export default function YourIssuesScreen() {
 
   const myEscalated = myPosts.filter((p) => p.escalated && p.civic_issues);
   const hasAnything =
-    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0;
+    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0;
   const wa = weeklyActivity;
   const showActivity = wa && (wa.cardsRead > 0 || wa.votesCast > 0 || wa.itemsWatched > 0 || wa.responsesReceived > 0);
 
@@ -194,9 +235,10 @@ export default function YourIssuesScreen() {
                 </View>
               )}
 
-              {sinceLastVisit.length > 0 && (
+              {(sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0) && (
                 <>
                   <Text style={[s.sectionLabel, { color: T.amberHi }]}>New since your last visit</Text>
+                  {sinceLastVisitCards.map((card) => <MovedCardRow key={"card-" + card.id} card={card} onPress={() => openCard(card.id)} />)}
                   {sinceLastVisit.map((iss) => <IssueRow key={iss.id} issue={iss} highlight updated onPress={() => openIssue(iss.id)} />)}
                 </>
               )}
@@ -258,6 +300,7 @@ const s = StyleSheet.create({
   statusPill: { paddingHorizontal: 9, paddingVertical: 2, borderRadius: 99, fontSize: 10, fontWeight: "500", borderWidth: 1, overflow: "hidden" },
   voteMeta: { fontSize: 10, color: T.creamFaint },
   updated: { fontSize: 10, color: T.amberHi, fontWeight: "500" },
+  cardQuote: { color: T.creamDim, fontSize: 12, fontStyle: "italic", marginTop: 8, borderLeftWidth: 2, borderLeftColor: T.border, paddingLeft: 10, lineHeight: 18 },
   responseInd: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
   responseIndText: { fontSize: 12, color: T.tealHi, fontWeight: "600" },
   noResponse: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
