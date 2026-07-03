@@ -154,75 +154,82 @@ export default function IssueDetail() {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
 
-      const { data: iss } = await supabase.from("civic_issues").select("*").eq("id", issueId).maybeSingle();
+      // ── Phase 1: everything keyed on issueId (+ user), in parallel ──────
+      // Only the official-response reaction and related-issues query need the
+      // issue body; the rest need just issueId, so batch them.
+      const [
+        { data: iss },
+        { data: vote },
+        { count: watchers },
+        { data: reps },
+        { data: stakeRows },
+        { data: answers },
+        { data: subs, error: subErr },
+        { data: disags },
+        { data: agrs },
+      ] = await Promise.all([
+        supabase.from("civic_issues").select("*").eq("id", issueId).maybeSingle(),
+        user
+          ? supabase.from("votes").select("id").eq("issue_id", issueId).eq("user_id", user.id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase.from("watched_concern_cards").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
+        supabase.from("issue_replies")
+          .select("*, profiles(display_name)").eq("issue_id", issueId).is("removed_at", null).order("created_at", { ascending: true }),
+        supabase.from("issue_stakes")
+          .select("*, profiles:user_id(display_name)").eq("issue_id", issueId)
+          .order("created_at", { ascending: false }).limit(20),
+        supabase.from("expert_answers_public")
+          .select("id, body, helpful_count, created_at, question_id, issue_id, trust_tier, expert_handle, expert_credential, expert_domains")
+          .eq("issue_id", issueId).order("created_at", { ascending: true }),
+        supabase.from("issue_subissues")
+          .select("id, title, created_at").eq("issue_id", issueId).order("created_at", { ascending: true }),
+        supabase.from("disagreements")
+          .select("*, profiles(display_name)").eq("issue_id", issueId)
+          .or("position.eq.disagree,position.is.null").order("created_at", { ascending: false }),
+        supabase.from("disagreements")
+          .select("*, profiles(display_name)").eq("issue_id", issueId)
+          .eq("position", "agree").order("created_at", { ascending: false }),
+      ]);
+
       if (!iss) { router.back(); return; }
 
-      let userHasVoted = false;
-      if (user) {
-        const { data: vote } = await supabase.from("votes")
-          .select("id").eq("issue_id", issueId).eq("user_id", user.id).maybeSingle();
-        userHasVoted = !!vote;
-      }
-
-      if (user && iss.official_response) {
-        const { data: rxn } = await supabase.from("official_response_reactions")
-          .select("addressed").eq("issue_id", issueId).eq("user_id", user.id).maybeSingle();
-        if (rxn) setReaction(rxn.addressed ? "yes" : "no");
-      }
-
-      setIssue({ ...iss, user_has_voted: userHasVoted });
+      setIssue({ ...iss, user_has_voted: !!vote });
       if (iss.synthesis) setDistilled(iss.synthesis);
-
-      const { count: watchers } = await supabase.from("watched_concern_cards")
-        .select("id", { count: "exact", head: true }).eq("issue_id", issueId);
       setWatcherCount(watchers || 0);
-
-      const { data: reps } = await supabase.from("issue_replies")
-        .select("*, profiles(display_name)").eq("issue_id", issueId).is("removed_at", null).order("created_at", { ascending: true });
       setReplies(reps || []);
-
-      const { data: stakeRows } = await supabase.from("issue_stakes")
-        .select("*, profiles:user_id(display_name)").eq("issue_id", issueId)
-        .order("created_at", { ascending: false }).limit(20);
       setStakes(stakeRows || []);
       if (user) {
         const my = (stakeRows || []).find((sr: any) => sr.user_id === user.id);
         if (my) { setMyStake(my); setStakeInput(my.body); }
       }
-
-      const { data: answers } = await supabase.from("expert_answers_public")
-        .select("id, body, helpful_count, created_at, question_id, issue_id, trust_tier, expert_handle, expert_credential, expert_domains")
-        .eq("issue_id", issueId).order("created_at", { ascending: true });
       setExpertAnswers(answers || []);
-
-      const { data: subs, error: subErr } = await supabase.from("issue_subissues")
-        .select("id, title, created_at").eq("issue_id", issueId).order("created_at", { ascending: true });
       if (!subErr) setSubIssues(subs || []);
+      setDisagreements(disags || []);
+      setAgreements(agrs || []);
 
-      // Related civic issues — same area, ranked by shared title words.
+      // ── Phase 2: the two reads that need the issue body, in parallel ────
       const STOP = new Set(["the","and","for","with","that","this","from","jackson","township","about","issue","there","their","would","could","should"]);
       const words = (iss.title || "").toLowerCase().split(/\W+/).filter((w: string) => w.length > 4 && !STOP.has(w));
       let relQ = supabase.from("civic_issues")
         .select("id, title, status, support_count, voice_count, created_at")
         .neq("id", issueId).order("created_at", { ascending: false }).limit(30);
       relQ = iss.neighborhood_id ? relQ.eq("neighborhood_id", iss.neighborhood_id) : relQ.is("neighborhood_id", null);
-      const { data: relRows } = await relQ;
+
+      const [{ data: rxn }, { data: relRows }] = await Promise.all([
+        (user && iss.official_response)
+          ? supabase.from("official_response_reactions")
+              .select("addressed").eq("issue_id", issueId).eq("user_id", user.id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        relQ,
+      ]);
+
+      if (rxn) setReaction(rxn.addressed ? "yes" : "no");
       const ranked = (relRows || [])
         .map((r: any) => ({ r, score: words.reduce((n: number, w: string) => n + ((r.title || "").toLowerCase().includes(w) ? 1 : 0), 0) }))
         .filter((x: any) => x.score > 0)
         .sort((a: any, b: any) => b.score - a.score || +new Date(b.r.created_at) - +new Date(a.r.created_at))
         .slice(0, 5).map((x: any) => x.r);
       setRelatedIssues(ranked);
-
-      const { data: disags } = await supabase.from("disagreements")
-        .select("*, profiles(display_name)").eq("issue_id", issueId)
-        .or("position.eq.disagree,position.is.null").order("created_at", { ascending: false });
-      setDisagreements(disags || []);
-
-      const { data: agrs } = await supabase.from("disagreements")
-        .select("*, profiles(display_name)").eq("issue_id", issueId)
-        .eq("position", "agree").order("created_at", { ascending: false });
-      setAgreements(agrs || []);
     } catch (e) {
       console.error("IssueDetail load error:", e);
     } finally {
