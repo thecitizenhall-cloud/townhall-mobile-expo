@@ -55,40 +55,53 @@ export default function ProfileScreen() {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       if (!user) { setLoading(false); return; }
 
-      const { data: prof } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-      setProfile({ ...(prof || {}), email: user.email });
-      setNameDraft(prof?.display_name || "");
-
-      setVerified(await hasResidencyProof(user.id, prof?.neighborhood_id ?? null));
-
-      const { count: posts } = await supabase.from("posts").select("*", { count: "exact", head: true }).eq("author_id", user.id);
-      setPostCount(posts || 0);
-
       // This-week activity — attention reflected back (STRATEGY §4).
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const [readR, watchR, voteR, replyR, stakeR] = await Promise.allSettled([
-        supabase.from("concern_card_views").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("first_viewed_at", weekAgo),
-        supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
-        supabase.from("votes").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
-        supabase.from("issue_replies").select("*", { count: "exact", head: true }).eq("author_id", user.id).gte("created_at", weekAgo),
-        supabase.from("issue_stakes").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+
+      // ── Phase 1: everything keyed on user.id, in parallel ──────────────
+      // The week-stats stay a nested allSettled so a single missing count
+      // table can't reject the whole batch (table-tolerance preserved).
+      const [profRes, postsRes, weekStats, unreadRes, wCountRes, roundTripsRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+        supabase.from("posts").select("*", { count: "exact", head: true }).eq("author_id", user.id),
+        Promise.allSettled([
+          supabase.from("concern_card_views").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("first_viewed_at", weekAgo),
+          supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+          supabase.from("votes").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+          supabase.from("issue_replies").select("*", { count: "exact", head: true }).eq("author_id", user.id).gte("created_at", weekAgo),
+          supabase.from("issue_stakes").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
+        ]),
+        supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("read", false),
+        supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("civic_issues")
+          .select("id, title, responded_at, official_response")
+          .not("official_response", "is", null).order("responded_at", { ascending: false }).limit(5),
       ]);
+
+      const prof = profRes.data;
+      setProfile({ ...(prof || {}), email: user.email });
+      setNameDraft(prof?.display_name || "");
+      setPostCount(postsRes.count || 0);
+
+      const [readR, watchR, voteR, replyR, stakeR] = weekStats;
       const cnt = (r: PromiseSettledResult<any>) => (r.status === "fulfilled" ? r.value.count || 0 : 0);
       setWeekStats({ read: cnt(readR), watched: cnt(watchR), voted: cnt(voteR), responded: cnt(replyR) + cnt(stakeR) });
 
-      const { count: unread } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("read", false);
-      setUnreadCount(unread || 0);
+      setUnreadCount(unreadRes.count || 0);
+      setWatchedCount(wCountRes.count || 0);
+      const roundTrips = roundTripsRes.data;
 
-      const { count: wCount } = await supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", user.id);
-      setWatchedCount(wCount || 0);
+      // ── Phase 2: the two reads that depend on phase-1 results, in parallel ──
+      const [verified, userVotesRes] = await Promise.all([
+        hasResidencyProof(user.id, prof?.neighborhood_id ?? null),
+        roundTrips?.length
+          ? supabase.from("votes").select("issue_id").eq("user_id", user.id).in("issue_id", roundTrips.map((r) => r.id))
+          : Promise.resolve({ data: null }),
+      ]);
 
-      // Most recent closed round trip the user voted on.
-      const { data: roundTrips } = await supabase.from("civic_issues")
-        .select("id, title, responded_at, official_response")
-        .not("official_response", "is", null).order("responded_at", { ascending: false }).limit(5);
+      setVerified(verified);
       if (roundTrips?.length) {
-        const { data: userVotes } = await supabase.from("votes").select("issue_id").eq("user_id", user.id).in("issue_id", roundTrips.map((r) => r.id));
-        const votedIds = new Set((userVotes || []).map((v: any) => v.issue_id));
+        const votedIds = new Set((userVotesRes.data || []).map((v: any) => v.issue_id));
         const match = roundTrips.find((r: any) => votedIds.has(r.id));
         setLastRoundTrip(match ? { title: match.title, date: match.responded_at } : null);
       } else setLastRoundTrip(null);
