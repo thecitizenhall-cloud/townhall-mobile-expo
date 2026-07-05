@@ -30,6 +30,7 @@ export default function OnboardingZKProof() {
   const [status, setStatus] = useState<"idle" | "proving" | "done" | "error">("idle");
   const [statusMsg, setStatusMsg] = useState("Waiting to start…");
   const [attested, setAttested] = useState(false);
+  const [webReady, setWebReady] = useState(false); // WebView has posted "ready"
 
   // Set params before page JS runs so they're available when the page posts "ready".
   // The page itself posts { type: "ready" } after its event listener is wired —
@@ -51,13 +52,10 @@ export default function OnboardingZKProof() {
       const msg = JSON.parse(event.nativeEvent.data);
 
       if (msg.type === "ready") {
-        setStatus("proving");
-        setStatusMsg("Generating zero-knowledge proof…");
-        // Tell the WebView to start proving
-        webRef.current?.injectJavaScript(`
-          window.dispatchEvent(new CustomEvent("townhall:start-zk"));
-          true;
-        `);
+        // Do NOT start proving here — that would bypass the sworn attestation.
+        // Just mark the WebView ready; proving starts only when the resident
+        // checks the affirmation box and taps "Generate proof" below.
+        setWebReady(true);
         return;
       }
 
@@ -140,18 +138,18 @@ export default function OnboardingZKProof() {
             <Text style={s.attestText}>{attestationStatement(params.neighborhoodName)}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.btn, !attested && s.btnDisabled]}
-            disabled={!attested}
+            style={[s.btn, (!attested || !webReady) && s.btnDisabled]}
+            disabled={!attested || !webReady}
             onPress={() => {
               setStatus("proving");
-              setStatusMsg("Requesting location permission…");
+              setStatusMsg(webReady ? "Requesting location permission…" : "Preparing…");
               webRef.current?.injectJavaScript(`
                 window.dispatchEvent(new CustomEvent("townhall:start-zk"));
                 true;
               `);
             }}
           >
-            <Text style={s.btnText}>Generate proof</Text>
+            <Text style={s.btnText}>{webReady ? "Generate proof" : "Preparing…"}</Text>
           </TouchableOpacity>
         </>
       )}
