@@ -11,6 +11,8 @@ import {
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
+import { cleanAreaQuery, osmSearchUrl } from "../../lib/cardArea";
+import { SITE_URL } from "../../lib/config";
 import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
 
 const OUTCOME_LABELS: Record<string, { label: string; color: string; bg: string }> = {
@@ -39,30 +41,29 @@ function formatDate(d?: string | null) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-// "Town, ST" from a municipality_id like "jackson_nj" or "jackson_nj_zoning".
-function muniLabel(municipalityId?: string | null) {
-  const m = String(municipalityId || "").split("_").filter(Boolean);
-  if (!m.length) return "";
-  let stateIdx = m.findIndex((sg, i) => i > 0 && /^[a-z]{2}$/i.test(sg));
-  if (stateIdx < 0) stateIdx = m.length;
-  const town = m.slice(0, stateIdx).map((sg) => sg.charAt(0).toUpperCase() + sg.slice(1)).join(" ");
-  const state = stateIdx < m.length ? m[stateIdx].toUpperCase() : "";
-  return [town, state].filter(Boolean).join(", ");
+// External map link + static-map URL for a card's affected area. The static map
+// reuses the web /api/card-map route (server-side geocode + render), so mobile
+// needs no map key of its own. cleanAreaQuery/osmSearchUrl live in lib/cardArea.
+function mapSearchUrl(card: any) {
+  return osmSearchUrl(cleanAreaQuery(card?.affected_area, card?.municipality_id));
 }
 
-function mapSearchUrl(card: any) {
-  let area = (card?.affected_area || "").trim();
-  area = area.replace(/\([^)]*\)/g, " ").replace(/\b(block|lot)\b[\s\S]*$/i, "").trim();
-  const primary = (area.split(",")[0] || "").trim() || area;
-  let locality = muniLabel(card?.municipality_id);
-  if (!locality) {
-    const fromText = area.split(",").slice(1).map((sg: string) => sg.trim()).reverse()
-      .find((sg: string) => /township|borough|\bNJ\b/i.test(sg));
-    if (fromText) locality = /\b[A-Z]{2}\b/.test(fromText) ? fromText : `${fromText}, NJ`;
-  }
-  if (!locality) locality = "Jackson Township, NJ";
-  const q = primary ? `${primary}, ${locality}` : locality;
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(q)}`;
+function cardMapUri(card: any) {
+  const p = new URLSearchParams({ area: card?.affected_area || "", muni: card?.municipality_id || "" });
+  return `${SITE_URL}/api/card-map?${p.toString()}`;
+}
+
+// Static map of the affected area; hidden if the route can't render it (no key
+// / not geocodable) so the "View on map" link below remains the fallback.
+function CardAreaMap({ card }: { card: any }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <Pressable onPress={() => Linking.openURL(mapSearchUrl(card))} style={s.mapImageWrap}>
+      <Image source={{ uri: cardMapUri(card) }} style={s.mapImage} resizeMode="cover"
+        onError={() => setFailed(true)} />
+    </Pressable>
+  );
 }
 
 function withHighlight(sourceUrl?: string | null, quote?: string | null) {
@@ -317,6 +318,7 @@ export default function ConcernCardDetail() {
           <View style={{ marginTop: 14 }}>
             <Text style={s.sectionHead}>What this affects</Text>
             <Text style={s.explainerText}>{card.affected_area}</Text>
+            <CardAreaMap card={card} />
             <Text style={s.mapLink} onPress={() => Linking.openURL(mapSearchUrl(card))}>📍 View on map ↗</Text>
           </View>
         ) : null}
@@ -528,6 +530,8 @@ const s = StyleSheet.create({
   sectionHead: { fontSize: 10, fontWeight: "500", color: T.creamFaint, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
   explainerText: { fontSize: 13, color: T.creamDim, lineHeight: 22 },
   mapLink: { marginTop: 8, fontSize: 12, color: T.blueHi },
+  mapImageWrap: { marginTop: 10, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: T.border },
+  mapImage: { width: "100%", aspectRatio: 2, backgroundColor: T.surface },
   reportLoc: { fontSize: 12, color: T.creamDim, marginBottom: 8 },
   reportPhoto: { width: "100%", height: 220, borderRadius: 10, borderWidth: 1, borderColor: T.border },
 
