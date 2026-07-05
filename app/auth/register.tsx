@@ -29,7 +29,7 @@ export default function Register() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
@@ -39,6 +39,19 @@ export default function Register() {
     setLoading(false);
     if (error) {
       Alert.alert("Registration failed", error.message);
+      return;
+    }
+    // When email confirmation is enabled, signUp returns no session — there is
+    // no authenticated user yet, so pushing into onboarding would dead-end in an
+    // infinite loop (getUser() is null, the neighborhood step silently no-ops).
+    // Send them to sign in after they confirm instead.
+    if (!data.session) {
+      Alert.alert(
+        "Check your email",
+        "We sent a confirmation link to " + email.trim() +
+          ". Tap it, then sign in to finish setting up your neighborhood.",
+      );
+      router.replace("/auth/login");
       return;
     }
     router.replace("/onboarding/account");
