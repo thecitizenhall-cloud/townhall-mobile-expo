@@ -50,6 +50,10 @@ function mapSearchUrl(card: any) {
 
 function cardMapUri(card: any) {
   const p = new URLSearchParams({ area: card?.affected_area || "", muni: card?.municipality_id || "" });
+  // Precise parcel pin when the Block/Lot resolved at ingest; else geocode.
+  if (card?.parcel_lat != null && card?.parcel_lon != null) {
+    p.set("lat", String(card.parcel_lat)); p.set("lon", String(card.parcel_lon));
+  }
   return `${SITE_URL}/api/card-map?${p.toString()}`;
 }
 
