@@ -59,6 +59,7 @@ export type CivicItem = {
   source: "civic_engine" | "seeclickfix" | "township" | "township_news" | "noaa";
   external_id: string;
   concern_card_id?: string;
+  _dist?: number;   // miles from the resident (opt-in "Near me" only)
   tag: string;
   title: string;
   body: string;
