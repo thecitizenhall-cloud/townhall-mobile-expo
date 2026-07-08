@@ -50,6 +50,11 @@ export default function CivicFeedItem({ item, onPress }: Props) {
             month: "short", day: "numeric",
           })}
         </Text>
+        {typeof item._dist === "number" && (
+          <Text style={[s.date, { color: T.tealHi, fontWeight: "600" }]}>
+            · {item._dist < 0.1 ? "<0.1" : item._dist.toFixed(1)} mi away
+          </Text>
+        )}
         {item.address ? (
           <Text style={s.address} numberOfLines={1}>{item.address}</Text>
         ) : null}

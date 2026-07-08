@@ -40,6 +40,16 @@ type FeedItem =
   | { type: "civic"; data: CivicItem }
   | { type: "post"; data: any };
 
+// Straight-line miles (Haversine) for the opt-in "Near me" sort. All client-side;
+// the resident's location never leaves the device.
+function milesBetween(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 3958.8, toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
 export default function FeedScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [posts, setPosts] = useState<any[]>([]);
@@ -53,7 +63,8 @@ export default function FeedScreen() {
   const [verified, setVerified] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin">("all");
+  const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin" | "near">("all");
+  const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
 
@@ -319,16 +330,41 @@ export default function FeedScreen() {
     streamItems = nonBotPosts.filter((p) => (p.tags || []).includes("banter")).map((p) => ({ type: "post" as const, data: p }));
   } else if (filter === "escalated") {
     streamItems = nonBotPosts.filter((p) => p.escalated).map((p) => ({ type: "post" as const, data: p }));
+  } else if (filter === "near") {
+    streamItems = nearbyCards.map((c) => ({ type: "civic" as const, data: c }));
   }
 
   const hasEscalated = nonBotPosts.some((p) => p.escalated);
   const filterTabs = [
     { key: "all", label: "All", show: true },
     { key: "issue", label: "Council", show: concernCards.length > 0 },
+    { key: "near", label: "📍 Near me", show: true },
     { key: "banter", label: "Banter", show: true },
     { key: "escalated", label: "Escalated", show: hasEscalated },
     { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
   ].filter((t) => t.show);
+
+  // Opt-in "Near me": request location on tap, load surfaced parcel-mapped cards,
+  // and rank by true distance (distance IS the filter — no neighborhood bound).
+  async function enableNearMe() {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") { showToast("Location needed for Near me"); return; }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude: lat, longitude: lon } = pos.coords;
+      const { data } = await supabase.from("concern_cards")
+        .select("id,title,summary,outcome_signal,meeting_date,affected_area,parcel_lat,parcel_lon")
+        .not("parcel_lat", "is", null).eq("surfaces_to_feed", true).eq("archived", false).limit(300);
+      const ranked = (data || []).map((c: any) => ({
+        source: "civic_engine", concern_card_id: c.id, title: c.title, body: c.summary,
+        outcome_signal: c.outcome_signal, created_at: c.meeting_date, address: c.affected_area,
+        _dist: milesBetween(lat, lon, c.parcel_lat, c.parcel_lon),
+      })) as CivicItem[];
+      ranked.sort((a, b) => (a._dist ?? 9e9) - (b._dist ?? 9e9));
+      setNearbyCards(ranked.slice(0, 30));
+      setFilter("near");
+    } catch { showToast("Couldn't get your location"); }
+  }
 
   function openCivic(c: CivicItem) {
     if (c.concern_card_id) router.push({ pathname: "/card/[id]", params: { id: c.concern_card_id } });
@@ -420,7 +456,7 @@ export default function FeedScreen() {
             {filterTabs.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
                 {filterTabs.map((t) => (
-                  <Pressable key={t.key} onPress={() => setFilter(t.key as any)} style={[s.filterPill, filter === t.key && s.filterPillActive]}>
+                  <Pressable key={t.key} onPress={() => t.key === "near" ? enableNearMe() : setFilter(t.key as any)} style={[s.filterPill, filter === t.key && s.filterPillActive]}>
                     <Text style={[s.filterPillText, filter === t.key && s.filterPillTextActive]}>{t.label}</Text>
                   </Pressable>
                 ))}
