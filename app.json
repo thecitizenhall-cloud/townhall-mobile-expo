@@ -46,7 +46,10 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Townhall uses your location to verify neighborhood residency via zero-knowledge proof. Your coordinates never leave your device."
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
