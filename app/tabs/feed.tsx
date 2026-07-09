@@ -10,6 +10,7 @@ import { supabase, CivicItem } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
 import { getConcernCardsForNeighborhood } from "../../lib/concernCards";
+import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import CivicFeedItem from "../../components/CivicFeedItem";
@@ -385,6 +386,15 @@ export default function FeedScreen() {
       if (status !== "granted") { showToast("Location needed for Near me"); return; }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude: lat, longitude: lon } = pos.coords;
+      // Opportunistic B3 backfill: residents onboarded before B3 have no
+      // district_id. We already hold their GPS here — resolve their district
+      // LOCALLY (point-in-polygon; never sent out) and store just the id.
+      // Fire-and-forget, one-shot (skips if already set). Activates B4 for them.
+      if (currentUser?.id && !profile?.district_id) {
+        detectDistrict(lat, lon)
+          .then((d) => { if (d?.id) supabase.from("profiles").update({ district_id: d.id }).eq("id", currentUser.id); })
+          .catch(() => {});
+      }
       const { data } = await supabase.from("concern_cards")
         .select("id,title,summary,outcome_signal,meeting_date,affected_area,parcel_lat,parcel_lon")
         .not("parcel_lat", "is", null).eq("surfaces_to_feed", true).eq("archived", false).limit(300);
