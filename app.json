@@ -8,11 +8,6 @@
     "scheme": "townhallcafe",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F0E0C",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0F0E0C"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "org.townhallcafe.app",
@@ -48,7 +43,16 @@
       ],
       "expo-asset",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0F0E0C"
+        }
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
