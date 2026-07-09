@@ -6,6 +6,7 @@ import {
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
 
 // Live schema: neighborhoods keys off city_id (FK to cities). There is no
@@ -105,9 +106,17 @@ export default function OnboardingNeighborhood() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // B3: resolve the resident's election district LOCALLY from GPS (point-in-
+    // polygon on device — location never sent out); store only the district id.
+    let district_id: string | null = null;
+    if (coords?.lat != null && coords?.lng != null) {
+      try { district_id = (await detectDistrict(coords.lat, coords.lng))?.id ?? null; } catch {}
+    }
+
     await supabase.from("profiles").update({
       neighborhood_id: hood.id,
       neighborhood: hood.name,
+      district_id,
     }).eq("id", user.id);
 
     setSaving(false);

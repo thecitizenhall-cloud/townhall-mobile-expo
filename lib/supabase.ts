@@ -60,6 +60,8 @@ export type CivicItem = {
   external_id: string;
   concern_card_id?: string;
   _dist?: number;   // miles from the resident (opt-in "Near me" only)
+  _inDistrict?: boolean;    // card is in the resident's election district (B4)
+  _districtName?: string;
   tag: string;
   title: string;
   body: string;
