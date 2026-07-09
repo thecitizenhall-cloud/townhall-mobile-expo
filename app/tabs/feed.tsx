@@ -9,6 +9,7 @@ import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
+import { getConcernCardsForNeighborhood } from "../../lib/concernCards";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import CivicFeedItem from "../../components/CivicFeedItem";
@@ -65,6 +66,7 @@ export default function FeedScreen() {
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
+  const [districtCards, setDistrictCards] = useState<CivicItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
 
@@ -142,6 +144,25 @@ export default function FeedScreen() {
         return [];
       })();
 
+      // B4: the resident's ELECTION DISTRICT cards (hyper-local, geo-assigned by
+      // parcel), to lead the feed. Only when a district was detected at onboarding
+      // (profiles.district_id); shaped to CivicItem like the Near-me path.
+      const districtPromise = (async (): Promise<CivicItem[]> => {
+        if (!p?.district_id) return [];
+        try {
+          const { data: dh } = await supabase.from("neighborhoods")
+            .select("slug, name").eq("id", p.district_id).maybeSingle();
+          if (!dh?.slug) return [];
+          const dc = await getConcernCardsForNeighborhood(dh.slug, 12);
+          return dc.map((c: any) => ({
+            source: "civic_engine", concern_card_id: c.id, external_id: `district-${c.id}`,
+            tag: "district", title: c.title, body: c.summary, url: null,
+            address: c.affected_area, created_at: c.meeting_date, image_url: null,
+            outcome_signal: c.outcome_signal, _inDistrict: true, _districtName: dh.name,
+          })) as CivicItem[];
+        } catch { return []; }
+      })();
+
       // Resident posts (with author profile), scoped to the neighborhood.
       // No removed_at/hidden_at filter — those columns don't exist in the live
       // schema; post visibility is enforced by RLS, matching the web TownScreen.
@@ -154,9 +175,10 @@ export default function FeedScreen() {
       // ── Everything that needs only `p`/user.id, in parallel ────────────
       // (verification, civic feed, posts, open issues, both watch tables) —
       // previously a long serial chain with issues + watch state stranded last.
-      const [verified, civicItems, postRes, issRes, wiRes, wcRes] = await Promise.all([
+      const [verified, civicItems, districtItems, postRes, issRes, wiRes, wcRes] = await Promise.all([
         hasResidencyProof(user.id, p?.neighborhood_id ?? null),
         civicPromise,
+        districtPromise,
         postQ,
         supabase.from("civic_issues").select("*").neq("status", "resolved").order("voice_count", { ascending: false }).limit(20),
         supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
@@ -165,6 +187,7 @@ export default function FeedScreen() {
 
       setVerified(verified);
       setCivic(civicItems);
+      setDistrictCards(districtItems);
       setIssues(issRes.data || []);
       setWatchedIds(new Set([
         ...((wiRes.data || []).map((w: any) => w.issue_id).filter(Boolean)),
@@ -317,13 +340,23 @@ export default function FeedScreen() {
 
   // Stream items, filtered.
   let streamItems: FeedItem[] = [];
+  const distIds = new Set(districtCards.map((c) => c.concern_card_id));
   if (filter === "all") {
-    streamItems = [
-      ...civic.map((c) => ({ type: "civic" as const, data: c })),
+    // B4: lead with the resident's district cards; then the date-sorted rest,
+    // deduped so a district card doesn't also appear in the general civic stream.
+    const rest = [
+      ...civic.filter((c) => !distIds.has(c.concern_card_id)).map((c) => ({ type: "civic" as const, data: c })),
       ...posts.map((p) => ({ type: "post" as const, data: p })),
     ].sort((a, b) => new Date(b.data.created_at).getTime() - new Date(a.data.created_at).getTime());
+    streamItems = [
+      ...districtCards.map((c) => ({ type: "civic" as const, data: c })),
+      ...rest,
+    ];
   } else if (filter === "issue") {
-    streamItems = concernCards.map((c) => ({ type: "civic" as const, data: c }));
+    streamItems = [
+      ...districtCards.map((c) => ({ type: "civic" as const, data: c })),
+      ...concernCards.filter((c) => !distIds.has(c.concern_card_id)).map((c) => ({ type: "civic" as const, data: c })),
+    ];
   } else if (filter === "bulletin") {
     streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
   } else if (filter === "banter") {

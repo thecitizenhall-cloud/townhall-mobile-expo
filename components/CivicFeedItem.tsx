@@ -55,6 +55,11 @@ export default function CivicFeedItem({ item, onPress }: Props) {
             · {item._dist < 0.1 ? "<0.1" : item._dist.toFixed(1)} mi away
           </Text>
         )}
+        {item._inDistrict && (
+          <Text style={[s.date, { color: T.tealHi, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4 }]}>
+            · Your district
+          </Text>
+        )}
         {item.address ? (
           <Text style={s.address} numberOfLines={1}>{item.address}</Text>
         ) : null}
