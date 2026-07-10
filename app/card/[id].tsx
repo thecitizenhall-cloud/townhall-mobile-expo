@@ -141,10 +141,17 @@ export default function ConcernCardDetail() {
           ? supabase.from("card_watches")
               .select("id").eq("user_id", u.id).eq("concern_card_id", id).maybeSingle()
           : Promise.resolve({ data: null }),
+        // Match ALL the significant title words (plainto_tsquery ANDs them) —
+        // one generic word matched unrelated posts. removed_at: takedown leak.
+        // Bot-synced posts are filtered after the fetch: they carry the card's
+        // own text, so they always matched and echoed the card back into its
+        // own comment section as a "Resident" (the ghost-post bug).
         (titleWords && c?.municipality_id)
           ? supabase.from("posts")
-              .select("*, profiles(display_name, trust_tier)")
-              .textSearch("body", titleWords.split(" | ")[0], { type: "plain" })
+              .select("*, profiles!inner(display_name, trust_tier, is_bot)")
+              .eq("profiles.is_bot", false)
+              .textSearch("body", titleWords.split(" | ").join(" "), { type: "plain" })
+              .is("removed_at", null)
               .order("created_at", { ascending: false }).limit(5)
           : Promise.resolve({ data: [] }),
         (c?.impact_type && c?.municipality_id)
@@ -193,7 +200,7 @@ export default function ConcernCardDetail() {
         return true;
       }));
       setWatched(!!watch);
-      setRelatedPosts(posts || []);
+      setRelatedPosts((posts || []).filter((p: any) => !p.profiles?.is_bot));
       setRelatedCards(related311 || []);
       setReplies(evtsHydrated);
       if (!subErr) setCardSubs(subs || []);
