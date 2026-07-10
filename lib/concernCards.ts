@@ -6,6 +6,16 @@
 //   watched_concern_cards is the front-end table for civic_issues watching
 import { supabase } from "./supabase";
 
+// The resident's neighborhood SLUG — the text key neighborhood_scores and
+// card_watches use (the notifier seeds/queries by it). profiles stores the
+// uuid, so resolve through neighborhoods.
+export async function getResidentNeighborhoodSlug(userId: string): Promise<string | null> {
+  const { data: p } = await supabase.from("profiles").select("neighborhood_id").eq("id", userId).maybeSingle();
+  if (!p?.neighborhood_id) return null;
+  const { data: h } = await supabase.from("neighborhoods").select("slug").eq("id", p.neighborhood_id).maybeSingle();
+  return h?.slug ?? null;
+}
+
 export async function watchCivicIssue(userId: string, issueId: string) {
   const { error } = await supabase.from("watched_concern_cards").insert({
     user_id: userId, issue_id: issueId, notify_on_move: true,

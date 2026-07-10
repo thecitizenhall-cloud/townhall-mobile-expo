@@ -6,7 +6,7 @@ import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import {
-  watchConcernCard, unwatchConcernCard, recordConcernCardView,
+  watchConcernCard, unwatchConcernCard, recordConcernCardView, getResidentNeighborhoodSlug,
 } from "../../lib/concernCards";
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import { T } from "../../lib/theme";
@@ -212,7 +212,7 @@ export default function ConcernCardDetail() {
       const { success } = await unwatchConcernCard(user.id, id);
       if (success) setWatched(false);
     } else {
-      const { success, error } = await watchConcernCard(user.id, id, card?.municipality_id);
+      const { success, error } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
       if (success) setWatched(true);
       else if (error) Alert.alert("Couldn't follow", error);
     }

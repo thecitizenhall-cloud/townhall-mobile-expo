@@ -43,11 +43,14 @@ export default function OnboardingWelcome() {
       }
 
       // Mark first session complete
-      await supabase.from("profiles").update({
+      // upsert, not update — see neighborhood.tsx: a missing profiles row must
+      // not silently no-op the onboarding completion.
+      await supabase.from("profiles").upsert({
+        id: user.id,
         onboarded: true,
         first_session_completed_at: new Date().toISOString(),
         last_session_at: new Date().toISOString(),
-      }).eq("id", user.id);
+      });
 
       setLoading(false);
     })();

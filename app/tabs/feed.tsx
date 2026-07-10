@@ -67,6 +67,7 @@ export default function FeedScreen() {
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
+  const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [districtCards, setDistrictCards] = useState<CivicItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
@@ -135,18 +136,22 @@ export default function FeedScreen() {
       // Aggregated civic items from the shared web route (concern cards,
       // bulletins…). Wrapped so a failed fetch degrades to posts-only without
       // rejecting the batch below.
+      // The neighborhood SLUG (text) is the key /api/civic-feed joins
+      // neighborhood_scores on AND the value card_watches rows must store (the
+      // notifier seeds/queries by it) — profiles holds the uuid, so resolve it
+      // once here for both the feed fetch and follow writes.
+      let hoodSlug: string | null = null;
+      if (p?.neighborhood_id) {
+        const { data: hood } = await supabase.from("neighborhoods")
+          .select("slug").eq("id", p.neighborhood_id).maybeSingle();
+        hoodSlug = hood?.slug ?? null;
+      }
+      setNeighborhoodSlug(hoodSlug);
+
       const civicPromise = (async (): Promise<CivicItem[]> => {
         try {
           const qs = new URLSearchParams();
-          // /api/civic-feed joins neighborhood_scores on the neighborhood *slug*
-          // (text), same as web TownScreen — profiles.neighborhood_id is the
-          // uuid, so resolve it to the slug first or the join matches nothing
-          // and the town-wide cards never reach the feed.
-          if (p?.neighborhood_id) {
-            const { data: hood } = await supabase.from("neighborhoods")
-              .select("slug").eq("id", p.neighborhood_id).maybeSingle();
-            if (hood?.slug) qs.set("neighborhood_id", hood.slug);
-          }
+          if (hoodSlug) qs.set("neighborhood_id", hoodSlug);
           const res = await fetch(`${SITE_URL}/api/civic-feed?${qs.toString()}`);
           if (res.ok) return (await res.json()).items ?? [];
         } catch { /* degrade to posts-only */ }
@@ -228,7 +233,7 @@ export default function FeedScreen() {
       const { error } = await supabase.from("card_watches").delete().eq("user_id", currentUser.id).eq("concern_card_id", cardId);
       if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
     } else {
-      const { error } = await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: profile?.neighborhood_id || "unknown" });
+      const { error } = await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: neighborhoodSlug || "unknown" });
       if (!error) setWatchedIds((prev) => new Set([...prev, cardId]));
       else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
     }

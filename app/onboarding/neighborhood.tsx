@@ -113,11 +113,15 @@ export default function OnboardingNeighborhood() {
       try { district_id = (await detectDistrict(coords.lat, coords.lng))?.id ?? null; } catch {}
     }
 
-    await supabase.from("profiles").update({
+    // upsert, not update: if the signup trigger ever failed to create the
+    // profiles row, update() matches 0 rows silently and the resident bounces
+    // back to onboarding forever (same footgun web's OnboardingScreen guards).
+    await supabase.from("profiles").upsert({
+      id: user.id,
       neighborhood_id: hood.id,
       neighborhood: hood.name,
       district_id,
-    }).eq("id", user.id);
+    });
 
     setSaving(false);
 
