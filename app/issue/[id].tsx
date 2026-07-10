@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable,
   ActivityIndicator, Modal,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -565,7 +566,7 @@ export default function IssueDetail() {
     : "What do you think people who support this care about?";
 
   return (
-    <View style={s.root}>
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       <Stack.Screen options={{ title: issue.neighborhoods?.name || "Civic Issue" }} />
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.issueTitle}>{issue.title}</Text>
@@ -1041,7 +1042,7 @@ export default function IssueDetail() {
           <Text style={s.toastText}>{toast}</Text>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

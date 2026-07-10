@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image, Alert, KeyboardAvoidingView,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -297,7 +297,7 @@ export default function ConcernCardDetail() {
   const hasOfficial = !!(card?.official_response || reportInfo?.official_response);
 
   return (
-    <View style={s.root}>
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       <Stack.Screen options={{ title: "Council item" }} />
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         {/* Hero */}
@@ -516,7 +516,7 @@ export default function ConcernCardDetail() {
           <Text style={s.sourceLink} onPress={() => Linking.openURL(card.source_url)}>→ View original council document ↗</Text>
         ) : null}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

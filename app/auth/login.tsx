@@ -67,15 +67,20 @@ function PledgeYourTown() {
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
     if (!email.trim() || !password) return;
+    setError("");
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
-    if (error) {
-      Alert.alert("Sign in failed", error.message);
+    if (err) {
+      // Inline, next to the fields — a popup Alert gave no chance to see and
+      // fix the typed password.
+      setError(/invalid/i.test(err.message) ? "Wrong email or password — tap Show to check what you typed." : err.message);
       return;
     }
     const { data: profile } = await supabase
@@ -118,18 +123,25 @@ export default function Login() {
             placeholder="you@example.com"
           />
 
-          <Text style={[s.label, { marginTop: 16 }]}>Password</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16, marginBottom: 6 }}>
+            <Text style={[s.label, { marginBottom: 0 }]}>Password</Text>
+            <TouchableOpacity onPress={() => setShowPw(v => !v)} hitSlop={10}>
+              <Text style={{ color: T.amberHi, fontSize: 12, fontWeight: "600" }}>{showPw ? "Hide" : "Show"}</Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={s.input}
             value={password}
-            onChangeText={setPassword}
-            secureTextEntry
+            onChangeText={(v) => { setPassword(v); if (error) setError(""); }}
+            secureTextEntry={!showPw}
             autoComplete="current-password"
             returnKeyType="done"
             onSubmitEditing={handleLogin}
             placeholderTextColor={T.creamFaint}
             placeholder="••••••••"
           />
+
+          {error ? <Text style={{ color: T.redHi, fontSize: 13, lineHeight: 18, marginTop: 10 }}>{error}</Text> : null}
 
           <TouchableOpacity
             style={[s.btn, loading && s.btnDisabled]}

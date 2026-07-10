@@ -12,6 +12,7 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleRegister() {
@@ -101,12 +102,17 @@ export default function Register() {
             placeholder="you@example.com"
           />
 
-          <Text style={[s.label, { marginTop: 16 }]}>Password</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16, marginBottom: 6 }}>
+            <Text style={[s.label, { marginBottom: 0 }]}>Password</Text>
+            <TouchableOpacity onPress={() => setShowPw(v => !v)} hitSlop={10}>
+              <Text style={{ color: T.amberHi, fontSize: 12, fontWeight: "600" }}>{showPw ? "Hide" : "Show"}</Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={s.input}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={!showPw}
             autoComplete="new-password"
             returnKeyType="done"
             onSubmitEditing={handleRegister}

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
-  TouchableOpacity, Pressable, TextInput, Alert, ScrollView,
+  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -434,7 +434,7 @@ export default function FeedScreen() {
   const neighborhood = profile?.neighborhood || "your town";
 
   return (
-    <View style={s.root}>
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       <FlatList
         style={s.root}
         contentContainerStyle={s.content}
@@ -626,7 +626,7 @@ export default function FeedScreen() {
       </View>
 
       {toast && <View style={s.toast} pointerEvents="none"><Text style={s.toastText}>{toast}</Text></View>}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
