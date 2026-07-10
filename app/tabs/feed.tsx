@@ -354,6 +354,22 @@ export default function FeedScreen() {
     setReporting(false);
   }
 
+  // One entry point on the feed (the tap bar); the write paths (post / street
+  // report) are chosen INSIDE the opened composer — mirrors the web compose
+  // diet, and gives the phone its bottom real estate back.
+  const composeModes = (active: "post" | "report") => (
+    <View style={{ flexDirection: "row", gap: 6, marginBottom: 10 }}>
+      {[
+        { key: "post" as const, icon: "💬", label: "Post", onPick: () => { setReportOpen(false); setComposeOpen(true); } },
+        { key: "report" as const, icon: "📍", label: "Report", onPick: () => { setComposeOpen(false); setReportOpen(true); } },
+      ].map((m) => (
+        <Pressable key={m.key} onPress={m.onPick} style={[s.modeChip, active === m.key && s.modeChipActive]}>
+          <Text style={[s.modeChipText, active === m.key && s.modeChipTextActive]}>{m.icon} {m.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+
   // Derived: concern cards and bulletins out of the civic items.
   const concernCards = civic.filter((c) => c.source === "civic_engine" && c.concern_card_id);
   const nonBotPosts = posts.filter((p) => !p.profiles?.is_bot);
@@ -366,7 +382,7 @@ export default function FeedScreen() {
     // deduped so a district card doesn't also appear in the general civic stream.
     const rest = [
       ...civic.filter((c) => !distIds.has(c.concern_card_id)).map((c) => ({ type: "civic" as const, data: c })),
-      ...posts.map((p) => ({ type: "post" as const, data: p })),
+      ...nonBotPosts.map((p) => ({ type: "post" as const, data: p })),
     ].sort((a, b) => new Date(b.data.created_at).getTime() - new Date(a.data.created_at).getTime());
     streamItems = [
       ...districtCards.map((c) => ({ type: "civic" as const, data: c })),
@@ -471,11 +487,9 @@ export default function FeedScreen() {
 
             {!verified && (
               <TouchableOpacity style={s.verifyBanner} onPress={goVerify} activeOpacity={0.8}>
-                <Text style={s.verifyBannerTitle}>You're reading as a guest</Text>
-                <Text style={s.verifyBannerText}>
-                  Reading is open to everyone. Verify your residency to follow issues, share a stake, and have your voice count in your town.
+                <Text style={s.verifyBannerText} numberOfLines={1}>
+                  Reading as a guest · <Text style={s.verifyBannerCta}>Verify residency →</Text>
                 </Text>
-                <Text style={s.verifyBannerCta}>Verify residency →</Text>
               </TouchableOpacity>
             )}
 
@@ -568,17 +582,13 @@ export default function FeedScreen() {
       {/* Compose / report bar */}
       <View style={s.composeBar}>
         {!composeOpen && !reportOpen ? (
-          <View style={{ gap: 8 }}>
-            <Pressable style={s.composeTap} onPress={() => setComposeOpen(true)}>
-              <Text style={s.composeTapText}>What's on your mind in {neighborhood}?</Text>
-              <Text style={s.composeTapIcon}>✎</Text>
-            </Pressable>
-            <Pressable style={s.reportTap} onPress={() => setReportOpen(true)}>
-              <Text style={s.reportTapText}>📍 Report a street issue (pothole, light out, dumping…)</Text>
-            </Pressable>
-          </View>
+          <Pressable style={s.composeTap} onPress={() => setComposeOpen(true)}>
+            <Text style={s.composeTapText}>What's on your mind in {neighborhood}?</Text>
+            <Text style={s.composeTapIcon}>✎</Text>
+          </Pressable>
         ) : composeOpen ? (
           <View style={s.composeCard}>
+            {composeModes("post")}
             <TextInput style={s.composeInput} autoFocus multiline placeholder={`What's worth raising with your neighbors in ${neighborhood}?`}
               placeholderTextColor={T.creamFaint} value={draft} maxLength={2000} onChangeText={setDraft} />
             <View style={s.composeFooter}>
@@ -602,6 +612,7 @@ export default function FeedScreen() {
           </View>
         ) : (
           <ScrollView style={s.reportCard} keyboardShouldPersistTaps="handled">
+            {composeModes("report")}
             <Text style={s.reportHead}>Report a street issue</Text>
             <View style={s.reportTypes}>
               {REPORT_TYPES.map((rt) => {
@@ -649,10 +660,9 @@ const s = StyleSheet.create({
   headerNeighborhood: { color: T.cream, fontSize: 22, fontWeight: "600" },
   headerLabel: { color: T.creamDim, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 2 },
 
-  verifyBanner: { marginHorizontal: 16, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amber, borderRadius: 12, padding: 16, marginBottom: 16 },
-  verifyBannerTitle: { color: T.amberHi, fontSize: 14, fontWeight: "600", marginBottom: 6 },
-  verifyBannerText: { color: T.cream, fontSize: 13, lineHeight: 20, marginBottom: 10 },
-  verifyBannerCta: { color: T.amberHi, fontSize: 13, fontWeight: "600" },
+  verifyBanner: { marginHorizontal: 16, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amber + "66", borderRadius: 99, paddingVertical: 7, paddingHorizontal: 14, marginBottom: 12, alignSelf: "flex-start" },
+  verifyBannerText: { color: T.creamDim, fontSize: 12 },
+  verifyBannerCta: { color: T.amberHi, fontSize: 12, fontWeight: "600" },
 
   firstTime: { borderBottomWidth: 1, borderBottomColor: T.border, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 14, backgroundColor: T.surface },
   firstTimeTitle: { fontSize: 17, color: T.cream, marginBottom: 4, fontWeight: "600" },
@@ -677,9 +687,11 @@ const s = StyleSheet.create({
   composeBar: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, backgroundColor: T.bg },
   composeTap: { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 14 },
   composeTapText: { flex: 1, color: T.creamDim, fontSize: 13 },
+  modeChip: { borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 },
+  modeChipActive: { backgroundColor: T.amberLo, borderColor: T.amberMid },
+  modeChipText: { fontSize: 12, color: T.creamDim },
+  modeChipTextActive: { color: T.amberHi, fontWeight: "600" },
   composeTapIcon: { fontSize: 18, color: T.amberHi },
-  reportTap: { backgroundColor: "transparent", borderWidth: 1, borderColor: T.border, borderRadius: 9, padding: 12 },
-  reportTapText: { color: T.creamDim, fontSize: 12 },
   composeCard: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 12 },
   composeInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: T.cream, minHeight: 70, textAlignVertical: "top" },
   composeFooter: { marginTop: 8 },
