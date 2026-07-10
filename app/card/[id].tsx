@@ -11,7 +11,7 @@ import {
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
-import { cleanAreaQuery, osmSearchUrl } from "../../lib/cardArea";
+import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
 import { SITE_URL } from "../../lib/config";
 import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
 
@@ -295,7 +295,7 @@ export default function ConcernCardDetail() {
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         {/* Hero */}
         <View style={s.sourceRow}>
-          <Text style={s.sourceTag}>Jackson Township</Text>
+          <Text style={s.sourceTag}>{townLabel(card.municipality_id) || "Township"}</Text>
           <Text style={s.sourceDot}> · {formatDate(card.meeting_date)}</Text>
         </View>
         <Text style={s.title}>{card.title}</Text>

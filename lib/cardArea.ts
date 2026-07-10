@@ -14,6 +14,19 @@ export function muniLabel(municipalityId?: string | null): string {
   return [town, state].filter(Boolean).join(", ");
 }
 
+// "<Town> Township" from a municipality_id — mirrors the web feed's card label
+// derivation (TownScreen) so no surface hardcodes a single town.
+export function townLabel(municipalityId?: string | null): string {
+  const base = String(municipalityId || "").split("_")[0];
+  return base ? `${base.charAt(0).toUpperCase() + base.slice(1)} Township` : "";
+}
+
+// "Council · <Town> Township" — the small-caps tag above a concern card.
+export function councilLabel(municipalityId?: string | null): string {
+  const town = townLabel(municipalityId);
+  return town ? `Council · ${town}` : "Council";
+}
+
 // Clean "street, Town, ST" query from a card's affected_area (drops parentheticals
 // and Block/Lot jargon, keeps the first address segment, always attaches a
 // locality-with-state so a bare street doesn't geocode to the wrong place).

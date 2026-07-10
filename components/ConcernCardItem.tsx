@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { T } from "../lib/theme";
+import { councilLabel } from "../lib/cardArea";
 import type { ConcernCard } from "../lib/supabase";
 
 type Props = {
@@ -17,7 +18,7 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.8}>
       <View style={s.header}>
-        <Text style={s.source}>{(card.source_label || "Council · Jackson Township").toUpperCase()}</Text>
+        <Text style={s.source}>{(card.source_label || councilLabel(card.municipality_id)).toUpperCase()}</Text>
         {hasOutcome && (
           <View style={s.outcomePill}>
             <Text style={s.outcomeText}>Outcome: {card.outcome_signal}</Text>
