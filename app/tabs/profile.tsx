@@ -3,7 +3,8 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable,
   TextInput, Alert, ActivityIndicator,
 } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import YourIssuesScreen from "./issues";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { reservedNameError } from "../../lib/displayName";
@@ -27,10 +28,13 @@ const PREF_ROWS = [
 ] as const;
 
 export default function ProfileScreen() {
+  // /tabs/profile?tab=tracker opens straight onto the Tracker tab (the old
+  // standalone tracker destination, now folded into Me).
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
   const [profile, setProfile] = useState<any>(null);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"profile" | "notifications">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "tracker" | "notifications">(tab === "tracker" ? "tracker" : "profile");
 
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null);
   const [postCount, setPostCount] = useState(0);
@@ -182,10 +186,18 @@ export default function ProfileScreen() {
     <View style={s.root}>
       {/* Header + tabs */}
       <View style={s.head}>
-        <Text style={s.headTitle}>Me</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/tabs/feed"))}
+            accessibilityLabel="Back to your town"
+            style={{ width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: T.border, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ color: T.creamDim, fontSize: 15, lineHeight: 18 }}>←</Text>
+          </Pressable>
+          <Text style={s.headTitle}>Me</Text>
+        </View>
         <View style={s.tabs}>
           {[
             { key: "profile", label: "Profile" },
+            { key: "tracker", label: "Tracker" },
             { key: "notifications", label: unreadCount > 0 ? `Alerts · ${unreadCount}` : "Alerts" },
           ].map((tab) => (
             <Pressable key={tab.key} onPress={() => { setActiveTab(tab.key as any); if (tab.key === "notifications") loadNotifications(); }}
@@ -196,7 +208,7 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {activeTab === "profile" ? (
+      {activeTab === "profile" && (
         <ScrollView style={s.root} contentContainerStyle={s.content}>
           <View style={s.identityCard}>
             <View style={s.avatar}><Text style={s.avatarLetter}>{(profile?.display_name?.[0] || "?").toUpperCase()}</Text></View>
@@ -268,7 +280,12 @@ export default function ProfileScreen() {
           <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}><Text style={s.signOutText}>Sign out</Text></TouchableOpacity>
           <TouchableOpacity onPress={handleDeleteAccount}><Text style={s.deleteText}>Request account deletion</Text></TouchableOpacity>
         </ScrollView>
-      ) : (
+      )}
+
+      {/* Tracker — the round-trip ledger, folded into Me (mirrors web) */}
+      {activeTab === "tracker" && <YourIssuesScreen />}
+
+      {activeTab === "notifications" && (
         <ScrollView style={s.root} contentContainerStyle={s.content}>
           {!notifsLoaded ? (
             <View style={s.center}><ActivityIndicator color={T.amber} /></View>

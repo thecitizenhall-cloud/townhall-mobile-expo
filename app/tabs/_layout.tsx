@@ -1,57 +1,26 @@
-import { Tabs } from "expo-router";
-import { View, Text } from "react-native";
+import { Stack } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../../lib/theme";
 
-function TabIcon({ focused, char }: { focused: boolean; char: string }) {
-  return (
-    <View style={{ alignItems: "center" }}>
-      <Text style={{ fontSize: 18, color: focused ? T.amberHi : T.creamFaint }}>
-        {char}
-      </Text>
-    </View>
-  );
-}
-
+// One-screen shell (UX north star, mirrors web PR #64): the feed IS the app —
+// no tab bar. Me (Profile · Tracker · Alerts) opens from the avatar in the
+// feed header, and Tracker is folded into Me as a tab. The /tabs/* routes
+// survive so existing navigations and deep links keep working.
 export default function TabsLayout() {
+  // The removed native headers used to clear the status bar — pad the top
+  // inset here so screen content never sits under the notch.
+  const insets = useSafeAreaInsets();
   return (
-    <Tabs
+    <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: T.bg },
-        headerTintColor: T.cream,
-        headerShadowVisible: false,
-        tabBarStyle: {
-          backgroundColor: T.surface,
-          borderTopColor: T.border,
-          borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
-        },
-        tabBarActiveTintColor: T.amberHi,
-        tabBarInactiveTintColor: T.creamFaint,
-        tabBarLabelStyle: { fontSize: 11 },
+        headerShown: false,
+        contentStyle: { backgroundColor: T.bg, paddingTop: insets.top },
+        animation: "slide_from_right",
       }}
     >
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: "Town",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} char="⌂" />,
-        }}
-      />
-      <Tabs.Screen
-        name="issues"
-        options={{
-          title: "Your Issues",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} char="◎" />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} char="○" />,
-        }}
-      />
-    </Tabs>
+      <Stack.Screen name="feed" />
+      <Stack.Screen name="profile" />
+      <Stack.Screen name="issues" />
+    </Stack>
   );
 }

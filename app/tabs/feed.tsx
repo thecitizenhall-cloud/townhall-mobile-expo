@@ -444,9 +444,19 @@ export default function FeedScreen() {
         ListHeaderComponent={
           <View>
             {profile?.neighborhood && (
-              <View style={s.header}>
-                <Text style={s.headerNeighborhood}>{profile.neighborhood}</Text>
-                <Text style={s.headerLabel}>Town feed</Text>
+              <View style={[s.header, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}>
+                <View>
+                  <Text style={s.headerNeighborhood}>{profile.neighborhood}</Text>
+                  <Text style={s.headerLabel}>Town feed</Text>
+                </View>
+                {/* The one nav affordance: avatar opens Me (Profile · Tracker · Alerts) */}
+                <Pressable onPress={() => router.push("/tabs/profile")}
+                  accessibilityLabel="Your profile, tracker, and alerts"
+                  style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ color: T.amberHi, fontSize: 13, fontWeight: "600" }}>
+                    {(profile?.display_name?.[0] || "?").toUpperCase()}
+                  </Text>
+                </Pressable>
               </View>
             )}
 

@@ -248,7 +248,7 @@ export default function YourIssuesScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
       ListHeaderComponent={
         <View>
-          <Text style={s.title}>Your Issues</Text>
+          <Text style={s.title}>Tracker</Text>
           <Text style={s.sub}>Everything you're following, across all levels.</Text>
 
           {!hasAnything ? (
