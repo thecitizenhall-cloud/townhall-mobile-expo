@@ -78,7 +78,7 @@ function Post({ c, timeAgo, currentUser }: { c: KitComment; timeAgo?: (d?: strin
 }
 
 // The Support / Oppose / Neutral lanes for one subsection's comments.
-function StanceLanes({ comments, timeAgo, currentUser }: { comments: KitComment[]; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
+function StanceLanes({ comments, subIssues, timeAgo, currentUser }: { comments: KitComment[]; subIssues?: { id: string; title: string }[]; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
   const g = groupByStance(comments);
   // The web renders the three stances as side-by-side columns; three columns
   // don't fit a phone, so here the "columns" are segmented chips with counts
@@ -90,6 +90,15 @@ function StanceLanes({ comments, timeAgo, currentUser }: { comments: KitComment[
     return <Text style={s.none}>No comments yet — be the first neighbor to weigh in.</Text>;
   }
   const active = STANCES.find((st) => st.key === lane) || STANCES[0];
+  // Inside the selected position: direct comments first, then a nested
+  // sub-section per sub-issue that holds comments at this stance — the
+  // positions are the top-level sections, sub-issues live inside them.
+  const subs = subIssues || [];
+  const items = g[lane];
+  const direct = items.filter((c) => !c.sub_issue_id || !subs.some((x) => x.id === c.sub_issue_id));
+  const subGroups = subs
+    .map((sub) => ({ sub, items: items.filter((c) => c.sub_issue_id === sub.id) }))
+    .filter((x) => x.items.length > 0);
   return (
     <>
       <View style={s.laneChips}>
@@ -104,11 +113,14 @@ function StanceLanes({ comments, timeAgo, currentUser }: { comments: KitComment[
         ))}
       </View>
       <View style={s.lane}>
-        {g[lane].length === 0 ? (
-          <Text style={s.none}>{active.none}</Text>
-        ) : (
-          g[lane].map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)
-        )}
+        {items.length === 0 ? <Text style={s.none}>{active.none}</Text> : null}
+        {direct.map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)}
+        {subGroups.map((g2) => (
+          <View key={g2.sub.id} style={s.subsec}>
+            <Text style={s.subsecTitle}>↳ {g2.sub.title}</Text>
+            {g2.items.map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)}
+          </View>
+        ))}
       </View>
     </>
   );
@@ -228,12 +240,7 @@ export default function CommentKit({
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
-
-  const bySub: Record<string, KitComment[]> = { main: [] };
-  (subIssues || []).forEach((sub) => { bySub[sub.id] = []; });
-  (comments || []).forEach((c) => {
-    (c.sub_issue_id && bySub[c.sub_issue_id] ? bySub[c.sub_issue_id] : bySub.main).push(c);
-  });
+  const [target, setTarget] = useState<string | null>(null);   // null = the main flow
 
   async function createSub() {
     const t = newTitle.trim();
@@ -273,56 +280,56 @@ export default function CommentKit({
 
   return (
     <View style={s.grid}>
-      {/* Main discussion */}
       <View style={s.card}>
-        <Text style={s.cardTitle}>Main discussion · {bySub.main.length}</Text>
-        <StanceLanes comments={bySub.main} timeAgo={timeAgo} currentUser={currentUser} />
-        {composer(null)}
-      </View>
+        <Text style={s.cardTitle}>Discussion · {(comments || []).length}</Text>
+        <StanceLanes comments={comments || []} subIssues={subIssues || []} timeAgo={timeAgo} currentUser={currentUser} />
 
-      {/* One card per sub-issue */}
-      {(subIssues || []).map((sub) => (
-        <View key={sub.id} style={s.card}>
-          <View style={s.cardTitleRow}>
-            <Text style={s.tag}>SUB-ISSUE</Text>
-            <Text style={s.cardTitle}>{sub.title} · {bySub[sub.id].length}</Text>
-          </View>
-          <StanceLanes comments={bySub[sub.id]} timeAgo={timeAgo} currentUser={currentUser} />
-          {composer(sub.id)}
-        </View>
-      ))}
-
-      {/* Propose a sub-issue */}
-      {currentUser ? (
-        <View style={[s.card, s.cardAdd]}>
-          {showAdd ? (
-            <>
-              <TextInput
-                style={s.input}
-                autoFocus
-                placeholder="Name a sub-issue (e.g. Rt 9 crossing safety)…"
-                placeholderTextColor={T.creamFaint}
-                value={newTitle}
-                maxLength={120}
-                onChangeText={setNewTitle}
-                multiline
-              />
-              <View style={s.addRow}>
-                <Pressable onPress={() => { setShowAdd(false); setNewTitle(""); }} style={s.cancelBtn}>
-                  <Text style={s.cancelBtnText}>Cancel</Text>
-                </Pressable>
-                <Pressable onPress={createSub} disabled={creating || newTitle.trim().length < 3} style={[s.postBtn, (creating || newTitle.trim().length < 3) && s.disabled]}>
-                  <Text style={s.postBtnText}>{creating ? "Adding…" : "Add"}</Text>
-                </Pressable>
-              </View>
-            </>
-          ) : (
-            <Pressable onPress={() => setShowAdd(true)}>
-              <Text style={s.proposeText}>+ Propose a sub-issue</Text>
+        {/* Where the next comment lands — the main flow or a named sub-issue */}
+        {currentUser && (subIssues || []).length > 0 ? (
+          <View style={s.targetRow}>
+            <Text style={s.targetHint}>POST TO</Text>
+            <Pressable onPress={() => setTarget(null)}
+              style={[s.targetChip, target === null && s.targetChipActive]}>
+              <Text style={[s.targetChipText, target === null && s.targetChipTextActive]}>Main</Text>
             </Pressable>
-          )}
-        </View>
-      ) : null}
+            {(subIssues || []).map((sub) => (
+              <Pressable key={sub.id} onPress={() => setTarget(sub.id)}
+                style={[s.targetChip, target === sub.id && s.targetChipActive]}>
+                <Text style={[s.targetChipText, target === sub.id && s.targetChipTextActive]}>{sub.title}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {showAdd ? (
+          <>
+            <TextInput
+              style={[s.input, { marginTop: 10 }]}
+              autoFocus
+              placeholder="Name a sub-issue (e.g. Rt 9 crossing safety)…"
+              placeholderTextColor={T.creamFaint}
+              value={newTitle}
+              maxLength={120}
+              onChangeText={setNewTitle}
+              multiline
+            />
+            <View style={s.addRow}>
+              <Pressable onPress={() => { setShowAdd(false); setNewTitle(""); }} style={s.cancelBtn}>
+                <Text style={s.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={createSub} disabled={creating || newTitle.trim().length < 3} style={[s.postBtn, (creating || newTitle.trim().length < 3) && s.disabled]}>
+                <Text style={s.postBtnText}>{creating ? "Adding…" : "Add"}</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : currentUser ? (
+          <Pressable onPress={() => setShowAdd(true)}>
+            <Text style={[s.proposeText, { paddingTop: 10, textAlign: "left", fontSize: 12 }]}>+ Propose a sub-issue</Text>
+          </Pressable>
+        ) : null}
+
+        {composer(target)}
+      </View>
     </View>
   );
 }
@@ -332,6 +339,14 @@ const s = StyleSheet.create({
   laneChips: { flexDirection: "row", gap: 6, marginBottom: 8 },
   laneChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: T.border },
   laneChipText: { fontSize: 11, color: T.creamDim },
+  subsec: { marginTop: 12, paddingTop: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: T.border },
+  subsecTitle: { fontSize: 11, color: T.creamDim, marginBottom: 6 },
+  targetRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 12 },
+  targetHint: { fontSize: 10, fontWeight: "600", color: T.creamFaint, letterSpacing: 0.8 },
+  targetChip: { borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 11, paddingVertical: 4 },
+  targetChipActive: { borderColor: T.amber, backgroundColor: T.amberLo },
+  targetChipText: { fontSize: 11, color: T.creamDim },
+  targetChipTextActive: { color: T.amberHi, fontWeight: "600" },
   card: { borderWidth: 1, borderColor: T.border, borderRadius: 12, backgroundColor: T.bg, padding: 14 },
   cardAdd: { borderStyle: "dashed", justifyContent: "center" },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 8 },
