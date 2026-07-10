@@ -50,11 +50,13 @@ export default function ProfileScreen() {
   const [notifsLoaded, setNotifsLoaded] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({ round_trip_closed: true, meeting_imminent: true, watched_item_moved: true });
   const [prefsStatus, setPrefsStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Reload on focus so activity/standing reflect actions taken on other tabs.
   useFocusEffect(useCallback(() => { load(); }, []));
 
   async function load() {
+    setLoadError(null);
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       if (!user) { setLoading(false); return; }
@@ -110,7 +112,9 @@ export default function ProfileScreen() {
         setLastRoundTrip(match ? { title: match.title, date: match.responded_at } : null);
       } else setLastRoundTrip(null);
     } catch (e) {
+      // A dropped connection must say so, not leave the screen blank/stale.
       console.error("Profile load error:", e);
+      setLoadError("Couldn't load your profile — tap to retry.");
     } finally {
       setLoading(false);
     }
@@ -207,6 +211,12 @@ export default function ProfileScreen() {
           ))}
         </View>
       </View>
+
+      {loadError ? (
+        <Pressable onPress={() => { setLoading(true); load(); }} style={s.loadErr}>
+          <Text style={s.loadErrText}>{loadError}</Text>
+        </Pressable>
+      ) : null}
 
       {activeTab === "profile" && (
         <ScrollView style={s.root} contentContainerStyle={s.content}>
@@ -344,6 +354,8 @@ export default function ProfileScreen() {
 }
 
 const s = StyleSheet.create({
+  loadErr: { marginHorizontal: 16, marginTop: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
+  loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center", padding: 32 },
   content: { padding: 20, paddingBottom: 60 },

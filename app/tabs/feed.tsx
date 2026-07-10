@@ -68,6 +68,7 @@ export default function FeedScreen() {
   const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [districtCards, setDistrictCards] = useState<CivicItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
@@ -124,6 +125,7 @@ export default function FeedScreen() {
 
   async function loadFeed(refresh = false) {
     if (refresh) setRefreshing(true); else setLoading(true);
+    setLoadError(null);
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
@@ -217,6 +219,10 @@ export default function FeedScreen() {
         withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
       }
       setPosts(withVotes);
+    } catch (e) {
+      // A dropped connection must say so, not leave the screen blank/stale.
+      console.error("feed load error:", e);
+      setLoadError("Couldn't load your town — pull down to refresh.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -443,6 +449,9 @@ export default function FeedScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
         ListHeaderComponent={
           <View>
+            {loadError ? (
+              <View style={s.loadErr}><Text style={s.loadErrText}>{loadError}</Text></View>
+            ) : null}
             {profile?.neighborhood && (
               <View style={[s.header, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}>
                 <View>
@@ -635,6 +644,8 @@ const s = StyleSheet.create({
   center: { justifyContent: "center", alignItems: "center" },
   content: { paddingBottom: 200 },
   header: { paddingHorizontal: 16, paddingTop: 16, marginBottom: 12 },
+  loadErr: { marginHorizontal: 16, marginTop: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
+  loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   headerNeighborhood: { color: T.cream, fontSize: 22, fontWeight: "600" },
   headerLabel: { color: T.creamDim, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 2 },
 

@@ -35,6 +35,7 @@ export default function IssueDetail() {
   const [expertAnswers, setExpertAnswers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [reaction, setReaction] = useState<"yes" | "no" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -151,6 +152,7 @@ export default function IssueDetail() {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
@@ -232,7 +234,9 @@ export default function IssueDetail() {
         .slice(0, 5).map((x: any) => x.r);
       setRelatedIssues(ranked);
     } catch (e) {
+      // A dropped connection must say so, not leave the screen blank/stale.
       console.error("IssueDetail load error:", e);
+      setLoadError("Couldn't load this issue — tap to retry.");
     } finally {
       setLoading(false);
     }
@@ -268,22 +272,23 @@ export default function IssueDetail() {
     setStakingOp(true);
     try {
       if (myStake) {
-        const { data } = await supabase.from("issue_stakes")
+        const { data, error } = await supabase.from("issue_stakes")
           .update({ body: stakeInput.trim() }).eq("id", myStake.id)
           .select("*, profiles:user_id(display_name)").single();
-        if (data) { setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s))); }
+        if (error || !data) throw error ?? new Error("No data returned");
+        setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s)));
       } else {
-        const { data } = await supabase.from("issue_stakes")
+        const { data, error } = await supabase.from("issue_stakes")
           .insert({ issue_id: issueId, user_id: currentUser.id, body: stakeInput.trim() })
           .select("*, profiles:user_id(display_name)").single();
-        if (data) {
-          setMyStake(data);
-          setStakes((prev) => [data, ...prev]);
-          setIssue((prev: any) => ({ ...prev, stake_count: (prev.stake_count || 0) + 1 }));
-        }
+        if (error || !data) throw error ?? new Error("No data returned");
+        setMyStake(data);
+        setStakes((prev) => [data, ...prev]);
+        setIssue((prev: any) => ({ ...prev, stake_count: (prev.stake_count || 0) + 1 }));
       }
     } catch (e) {
       console.error("stake error:", e);
+      showToast("Couldn't save that — check your connection and try again");
     } finally {
       setStakingOp(false);
     }
@@ -569,6 +574,11 @@ export default function IssueDetail() {
     <KeyboardAvoidingView style={s.root} behavior="padding">
       <Stack.Screen options={{ title: issue.neighborhoods?.name || "Civic Issue" }} />
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {loadError ? (
+          <Pressable onPress={load} style={s.loadErr}>
+            <Text style={s.loadErrText}>{loadError}</Text>
+          </Pressable>
+        ) : null}
         <Text style={s.issueTitle}>{issue.title}</Text>
 
         {/* Where this stands */}
@@ -1047,6 +1057,8 @@ export default function IssueDetail() {
 }
 
 const s = StyleSheet.create({
+  loadErr: { marginBottom: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
+  loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center" },
   content: { padding: 16, paddingBottom: 80 },

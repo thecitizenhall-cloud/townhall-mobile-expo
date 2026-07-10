@@ -88,6 +88,7 @@ export default function ConcernCardDetail() {
   const [user, setUser] = useState<any>(null);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<any[]>([]);
   const [relatedCards, setRelatedCards] = useState<any[]>([]);
   const [replies, setReplies] = useState<any[]>([]);
@@ -100,6 +101,8 @@ export default function ConcernCardDetail() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   async function load() {
+    setLoadError(null);
+    try {
     const u = await getCurrentUser();  // local read; no getUser network round-trip on mount
     setUser(u);
 
@@ -206,7 +209,13 @@ export default function ConcernCardDetail() {
       if (!subErr) setCardSubs(subs || []);
       setAnnotations(annsHydrated);
     }
-    setLoading(false);
+    } catch (e) {
+      // No try/catch here used to strand the spinner forever on any error.
+      console.error("CardDetail load error:", e);
+      setLoadError("Couldn't load this item — tap to retry.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleWatch() {
@@ -300,6 +309,11 @@ export default function ConcernCardDetail() {
     <KeyboardAvoidingView style={s.root} behavior="padding">
       <Stack.Screen options={{ title: "Council item" }} />
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {loadError ? (
+          <Pressable onPress={load} style={s.loadErr}>
+            <Text style={s.loadErrText}>{loadError}</Text>
+          </Pressable>
+        ) : null}
         {/* Hero */}
         <View style={s.sourceRow}>
           <Text style={s.sourceTag}>{townLabel(card.municipality_id) || "Township"}</Text>
@@ -521,6 +535,8 @@ export default function ConcernCardDetail() {
 }
 
 const s = StyleSheet.create({
+  loadErr: { marginBottom: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
+  loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center" },
   content: { padding: 16, paddingBottom: 60 },
