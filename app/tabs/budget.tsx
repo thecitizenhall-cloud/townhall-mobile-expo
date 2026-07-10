@@ -62,6 +62,8 @@ export default function BudgetScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [picked, setPicked] = useState<any>(null); // tapped segment/line readout
+  const [school, setSchool] = useState<any>(null);
+  const [schoolLines, setSchoolLines] = useState<any[]>([]);
 
   useEffect(() => { load(); }, []);
   async function load() {
@@ -93,6 +95,15 @@ export default function BudgetScreen() {
       const { data: ls } = await supabase.from("budget_lines")
         .select("*").eq("budget_id", b.id).order("sort");
       setBudget(b); setLines(ls || []);
+      // The school district's budget (biggest slice of the bill) — best-effort.
+      const { data: sb } = await supabase.from("budgets")
+        .select("*").eq("municipality_id", `${b.municipality_id.split("_")[0]}_schools_nj`)
+        .order("year", { ascending: false }).limit(1).maybeSingle();
+      if (sb) {
+        const { data: sl } = await supabase.from("budget_lines")
+          .select("*").eq("budget_id", sb.id).order("sort");
+        setSchool(sb); setSchoolLines(sl || []);
+      }
     } catch (e) {
       console.error("Budget load error:", e);
       setLoadError("Couldn't load the budget — tap to retry.");
@@ -220,6 +231,35 @@ export default function BudgetScreen() {
               : "Tap a line for exact figures and year-over-year change."}
           </Text>
         </View>
+
+        {/* 3b · The schools' slice — the biggest piece of the bill */}
+        {school && schoolLines.length > 0 && (() => {
+          const sm = school.meta || {};
+          const sTotal = schoolLines.reduce((n: number, l: any) => n + Number(l.amount), 0);
+          const sMax = Math.max(...schoolLines.map((l: any) => Number(l.amount)), 1);
+          const avgSchool = sm.avg_home_school || null;
+          return (
+            <>
+              <Text style={s.sectionLabel}>THE SCHOOLS' SLICE — {(sm.school_year || school.year)} DISTRICT BUDGET</Text>
+              <Text style={s.blurb}>
+                {avgSchool ? <>The biggest piece: <Text style={s.blurbStrong}>{fmtUSD(avgSchool)}</Text> of your bill funds {sm.district || "the school district"}</> : (sm.district || "The school district")}
+                {" — a "}{fmtCompact(sTotal)} general fund{sm.per_pupil ? `, ${fmtUSD(sm.per_pupil)} per pupil` : ""}.
+                The amber figure is each line's share of that {avgSchool ? fmtUSD(avgSchool) : "share"} (proportional estimate).
+              </Text>
+              <View style={s.card}>
+                {schoolLines.map((l: any) => (
+                  <BarRow key={l.id} line={l} max={sMax} color="#3987E5"
+                    yourShare={avgSchool ? (Number(l.amount) / sTotal) * avgSchool : null} />
+                ))}
+                <Text style={[s.readout, picked?.kind === "line" && picked?.budget_id === school.id && s.readoutActive]}>
+                  {picked?.kind === "line" && picked?.budget_id === school.id
+                    ? `${picked.label}: ${fmtUSD(Number(picked.amount))} · ${((Number(picked.amount) / sTotal) * 100).toFixed(1)}% of the general fund`
+                    : "District figures from the NJ DOE 2025–26 advertised User-Friendly Budget."}
+                </Text>
+              </View>
+            </>
+          );
+        })()}
 
         {/* 4 · How it's paid for */}
         <Text style={s.sectionLabel}>HOW THE {fmtCompact(revTotal)} IS PAID FOR</Text>
