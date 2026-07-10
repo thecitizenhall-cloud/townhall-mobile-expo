@@ -21,6 +21,7 @@ export default function TabsLayout() {
       <Stack.Screen name="feed" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="issues" />
+      <Stack.Screen name="budget" />
     </Stack>
   );
 }

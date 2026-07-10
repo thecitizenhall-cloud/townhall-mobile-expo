@@ -411,6 +411,7 @@ export default function FeedScreen() {
     { key: "banter", label: "Banter", show: true },
     { key: "escalated", label: "Escalated", show: hasEscalated },
     { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
+    { key: "budget", label: "💰 Budget", show: true },
   ].filter((t) => t.show);
 
   // Opt-in "Near me": request location on tap, load surfaced parcel-mapped cards,
@@ -545,7 +546,7 @@ export default function FeedScreen() {
             {filterTabs.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
                 {filterTabs.map((t) => (
-                  <Pressable key={t.key} onPress={() => t.key === "near" ? enableNearMe() : setFilter(t.key as any)} style={[s.filterPill, filter === t.key && s.filterPillActive]}>
+                  <Pressable key={t.key} onPress={() => t.key === "budget" ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */) : t.key === "near" ? enableNearMe() : setFilter(t.key as any)} style={[s.filterPill, filter === t.key && s.filterPillActive]}>
                     <Text style={[s.filterPillText, filter === t.key && s.filterPillTextActive]}>{t.label}</Text>
                   </Pressable>
                 ))}
