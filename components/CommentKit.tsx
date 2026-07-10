@@ -80,23 +80,36 @@ function Post({ c, timeAgo, currentUser }: { c: KitComment; timeAgo?: (d?: strin
 // The Support / Oppose / Neutral lanes for one subsection's comments.
 function StanceLanes({ comments, timeAgo, currentUser }: { comments: KitComment[]; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
   const g = groupByStance(comments);
+  // The web renders the three stances as side-by-side columns; three columns
+  // don't fit a phone, so here the "columns" are segmented chips with counts
+  // (the three-way balance stays visible at a glance) and one lane shows at a
+  // time — defaulting to where the conversation actually is.
+  const busiest = STANCE_KEYS.reduce((a, b) => (g[b].length > g[a].length ? b : a), STANCE_KEYS[0]);
+  const [lane, setLane] = useState<Stance>(busiest);
+  if (!comments.length) {
+    return <Text style={s.none}>No comments yet — be the first neighbor to weigh in.</Text>;
+  }
+  const active = STANCES.find((st) => st.key === lane) || STANCES[0];
   return (
     <>
-      {STANCES.map((st) => (
-        <View key={st.key} style={s.lane}>
-          <View style={s.laneLabel}>
+      <View style={s.laneChips}>
+        {STANCES.map((st) => (
+          <Pressable key={st.key} onPress={() => setLane(st.key)}
+            style={[s.laneChip, lane === st.key && { backgroundColor: st.bg, borderColor: st.color }]}>
             <View style={[s.dot, { backgroundColor: st.color }]} />
-            <Text style={[s.laneLabelText, { color: st.color }]}>
+            <Text style={[s.laneChipText, lane === st.key && { color: st.color, fontWeight: "600" }]}>
               {st.short || st.label} · {g[st.key].length}
             </Text>
-          </View>
-          {g[st.key].length === 0 ? (
-            <Text style={s.none}>{st.none}</Text>
-          ) : (
-            g[st.key].map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)
-          )}
-        </View>
-      ))}
+          </Pressable>
+        ))}
+      </View>
+      <View style={s.lane}>
+        {g[lane].length === 0 ? (
+          <Text style={s.none}>{active.none}</Text>
+        ) : (
+          g[lane].map((c) => <Post key={c.id} c={c} timeAgo={timeAgo} currentUser={currentUser} />)
+        )}
+      </View>
     </>
   );
 }
@@ -245,6 +258,19 @@ export default function CommentKit({
     />
   );
 
+  // Nothing posted anywhere yet → no board, no counts, no sub-issue plumbing.
+  // Just the composer; the full organization appears with the first comment.
+  const isEmpty = !(comments || []).length && !(subIssues || []).length;
+  if (isEmpty) {
+    return (
+      <View style={s.grid}>
+        <View style={s.card}>
+          {composer(null)}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={s.grid}>
       {/* Main discussion */}
@@ -303,6 +329,9 @@ export default function CommentKit({
 
 const s = StyleSheet.create({
   grid: { gap: 14, paddingVertical: 8 },
+  laneChips: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  laneChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: T.border },
+  laneChipText: { fontSize: 11, color: T.creamDim },
   card: { borderWidth: 1, borderColor: T.border, borderRadius: 12, backgroundColor: T.bg, padding: 14 },
   cardAdd: { borderStyle: "dashed", justifyContent: "center" },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 8 },
