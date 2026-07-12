@@ -289,20 +289,15 @@ export default function ConcernCardDetail() {
   const outcome = OUTCOME_LABELS[card.outcome_signal] || OUTCOME_LABELS.pending;
   const impact = IMPACT_LABELS[card.impact_type] || "📋 Civic";
 
-  const ckComments: KitComment[] = [
-    ...replies.map((r) => ({
-      id: String(r.id), body: r._body || r.body || "", stance: r.stance,
-      name: r.profiles?.display_name || "Resident", created_at: r.created_at, sub_issue_id: r.sub_issue_id || null,
-      reportType: "card_event" as const, reportId: r.id, authorId: r.user_id,
-    })),
-    ...relatedPosts.map((p) => ({
-      id: "fp" + p.id,
-      body: (p.body || "").slice(0, 220) + ((p.body || "").length > 220 ? "…" : ""),
-      stance: "neutral", name: p.profiles?.display_name || "Resident", created_at: p.created_at,
-      sub_issue_id: null, tag: "from the feed",
-      reportType: "post" as const, reportId: p.id, authorId: p.author_id,
-    })),
-  ];
+  // Only actual comments on the card belong in the comment section. Related feed
+  // posts (that merely match the card's title words) are shown in their own
+  // "Related from the feed" section below — they are NOT comments, and mixing them
+  // in as neutral entries read like the old ghost-post bug.
+  const ckComments: KitComment[] = replies.map((r) => ({
+    id: String(r.id), body: r._body || r.body || "", stance: r.stance,
+    name: r.profiles?.display_name || "Resident", created_at: r.created_at, sub_issue_id: r.sub_issue_id || null,
+    reportType: "card_event" as const, reportId: r.id, authorId: r.user_id,
+  }));
   const hasOfficial = !!(card?.official_response || reportInfo?.official_response);
 
   return (
@@ -526,6 +521,23 @@ export default function ConcernCardDetail() {
           </View>
         )}
 
+        {/* Related from the feed — resident posts that mention this item. Kept
+            separate from the comment section so they're never mistaken for
+            comments on the card. */}
+        {relatedPosts.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            <Text style={s.sectionHead}>Related from the feed</Text>
+            {relatedPosts.map((p) => (
+              <View key={p.id} style={s.relatedCard}>
+                <Text style={s.relatedKind}>{p.profiles?.display_name || "Resident"} · {formatDate(p.created_at)}</Text>
+                <Text style={s.feedPostBody}>
+                  {(p.body || "").slice(0, 220)}{(p.body || "").length > 220 ? "…" : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {card.source_url ? (
           <Text style={s.sourceLink} onPress={() => Linking.openURL(card.source_url)}>→ View original council document ↗</Text>
         ) : null}
@@ -603,6 +615,7 @@ const s = StyleSheet.create({
   relatedCard: { padding: 12, borderWidth: 1, borderColor: T.border, borderRadius: 10, marginBottom: 8, backgroundColor: T.surface },
   relatedKind: { fontSize: 10, color: T.amberHi, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "500" },
   relatedTitle: { fontSize: 13, color: T.cream, fontWeight: "500", marginBottom: 6, lineHeight: 18 },
+  feedPostBody: { fontSize: 13, color: T.creamDim, lineHeight: 20 },
   relatedMeta: { flexDirection: "row", gap: 8, alignItems: "center" },
   sourceLink: { fontSize: 13, color: T.blueHi, marginTop: 16 },
 });
