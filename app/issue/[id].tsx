@@ -12,6 +12,7 @@ import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
+import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import IssueTimeline from "../../components/IssueTimeline";
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -50,6 +51,8 @@ export default function IssueDetail() {
   const [stakes, setStakes] = useState<any[]>([]);
   const [myStake, setMyStake] = useState<any>(null);
   const [stakeInput, setStakeInput] = useState("");
+  const [watching, setWatching] = useState(false);
+  const [watchBusy, setWatchBusy] = useState(false);
 
   const [subIssues, setSubIssues] = useState<any[]>([]);
   const [relatedIssues, setRelatedIssues] = useState<any[]>([]);
@@ -204,6 +207,9 @@ export default function IssueDetail() {
       if (user) {
         const my = (stakeRows || []).find((sr: any) => sr.user_id === user.id);
         if (my) { setMyStake(my); setStakeInput(my.body); }
+        const { data: w } = await supabase.from("watched_concern_cards")
+          .select("id").eq("user_id", user.id).eq("issue_id", issueId).maybeSingle();
+        setWatching(!!w);
       }
       setExpertAnswers(answers || []);
       if (!subErr) setSubIssues(subs || []);
@@ -579,7 +585,25 @@ export default function IssueDetail() {
             <Text style={s.loadErrText}>{loadError}</Text>
           </Pressable>
         ) : null}
-        <Text style={s.issueTitle}>{issue.title}</Text>
+        <View style={s.titleRow}>
+          <Text style={[s.issueTitle, { flex: 1, marginBottom: 0 }]}>{issue.title}</Text>
+          <Pressable
+            onPress={async () => {
+              if (!currentUser) { router.push("/auth/login"); return; }
+              if (watchBusy) return;
+              setWatchBusy(true);
+              const next = !watching;
+              const r = next ? await watchCivicIssue(currentUser.id, issueId)
+                             : await unwatchCivicIssue(currentUser.id, issueId);
+              if (r.success) { setWatching(next); setWatcherCount((c) => Math.max(0, c + (next ? 1 : -1))); }
+              setWatchBusy(false);
+            }}
+            style={[s.followBtn, watching && s.followBtnOn]}>
+            <Text style={[s.followBtnText, watching && s.followBtnTextOn]}>
+              {watchBusy ? "…" : watching ? "✓ Following" : "Follow"}
+            </Text>
+          </Pressable>
+        </View>
 
         {/* Where this stands */}
         {showStands && (
@@ -1063,6 +1087,11 @@ const s = StyleSheet.create({
   center: { justifyContent: "center", alignItems: "center" },
   content: { padding: 16, paddingBottom: 80 },
   issueTitle: { color: T.cream, fontSize: 21, fontWeight: "600", lineHeight: 29, marginBottom: 12 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 12 },
+  followBtn: { borderWidth: 1, borderColor: T.amberMid, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginTop: 2 },
+  followBtnOn: { backgroundColor: T.tealLo, borderColor: T.teal },
+  followBtnText: { color: T.amberHi, fontSize: 12, fontWeight: "600" },
+  followBtnTextOn: { color: T.tealHi },
 
   stands: { borderWidth: 1, borderColor: T.amber, backgroundColor: T.surfaceHi, borderRadius: 12, padding: 14, marginBottom: 14 },
   standsHead: { fontSize: 10, fontWeight: "600", color: T.amberHi, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 },
