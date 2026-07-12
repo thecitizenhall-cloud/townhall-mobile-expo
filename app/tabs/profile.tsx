@@ -34,7 +34,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"profile" | "tracker" | "notifications">(tab === "tracker" ? "tracker" : "profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "tracker">(tab === "tracker" ? "tracker" : "profile");
 
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null);
   const [postCount, setPostCount] = useState(0);
@@ -54,6 +54,10 @@ export default function ProfileScreen() {
 
   // Reload on focus so activity/standing reflect actions taken on other tabs.
   useFocusEffect(useCallback(() => { load(); }, []));
+
+  // Alerts now live inline on the Profile tab, so load them whenever the profile
+  // loads (fire-and-forget — a notifications hiccup must never blank the profile).
+  useFocusEffect(useCallback(() => { loadNotifications(); }, []));
 
   async function load() {
     setLoadError(null);
@@ -121,14 +125,14 @@ export default function ProfileScreen() {
   }
 
   async function loadNotifications() {
-    if (notifsLoaded) return;
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await getCurrentUser(); // local read; no getUser round-trip on the paint path
     if (!user) return;
     const { data } = await supabase.from("notifications").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
     setNotifications(data || []);
     setNotifsLoaded(true);
     const { data: prefs } = await supabase.from("notification_preferences").select("*").eq("user_id", user.id).maybeSingle();
     if (prefs) setNotifPrefs(prefs);
+    // Opening your profile counts as seeing your alerts — mark them read.
     await supabase.from("notifications").update({ read: true }).eq("user_id", user.id).eq("read", false);
     setUnreadCount(0);
   }
@@ -202,9 +206,8 @@ export default function ProfileScreen() {
           {[
             { key: "profile", label: "Profile" },
             { key: "tracker", label: "Tracker" },
-            { key: "notifications", label: unreadCount > 0 ? `Alerts · ${unreadCount}` : "Alerts" },
           ].map((tab) => (
-            <Pressable key={tab.key} onPress={() => { setActiveTab(tab.key as any); if (tab.key === "notifications") loadNotifications(); }}
+            <Pressable key={tab.key} onPress={() => setActiveTab(tab.key as any)}
               style={[s.tab, activeTab === tab.key && s.tabActive]}>
               <Text style={[s.tabText, activeTab === tab.key && s.tabTextActive]}>{tab.label}</Text>
             </Pressable>
@@ -276,15 +279,52 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Notification promise */}
+          {/* Alerts — folded into the Profile tab (mirrors web). Preference
+              toggles + recent notifications, inline. */}
           <View style={s.section}>
-            <Text style={s.sectionLabel}>Notifications</Text>
+            <Text style={s.sectionLabel}>Alerts</Text>
             <Text style={s.notifNote}>
-              Townhall notifies you only when something civically real is happening: a round trip closes, a meeting affecting you is imminent, or something you're watching moves.
+              Townhall notifies you only when something civically real is happening to you: an official responds to an issue you raised or voted on, a meeting affecting your neighborhood is within 48 hours, or something you're watching moves. No likes, replies, or other social noise.
             </Text>
-            <Pressable onPress={() => { setActiveTab("notifications"); loadNotifications(); }}>
-              <Text style={s.manageLink}>Manage alert settings →</Text>
-            </Pressable>
+            {prefsStatus ? (
+              <Text style={[s.prefsStatus, prefsStatus === "error" && { color: T.redHi }]}>
+                {prefsStatus === "saving" ? "Saving…" : prefsStatus === "saved" ? "Saved ✓" : "Couldn't save — check your connection."}
+              </Text>
+            ) : null}
+            {PREF_ROWS.map((pref) => {
+              const on = !!notifPrefs[pref.key];
+              return (
+                <View key={pref.key} style={s.prefRow}>
+                  <Text style={s.prefLabel}>{pref.label}</Text>
+                  <Pressable onPress={() => saveNotifPrefs(pref.key, !on)} style={[s.toggle, { backgroundColor: on ? T.teal : T.border }]}>
+                    <View style={[s.toggleKnob, { left: on ? 20 : 3 }]} />
+                  </Pressable>
+                </View>
+              );
+            })}
+
+            <View style={s.alertsDivider} />
+            <Text style={s.recentLabel}>Recent</Text>
+            {!notifsLoaded ? (
+              <ActivityIndicator color={T.amber} style={{ marginVertical: 16 }} />
+            ) : notifications.length === 0 ? (
+              <Text style={s.weekNote}>You're all caught up. You'll be notified only when something civically real happens.</Text>
+            ) : (
+              notifications.map((n) => {
+                const meta = NOTIF_TYPES[n.type] || { icon: "·", label: n.type };
+                const body = n.payload?.message || n.payload?.response || n.payload?.title || n.payload?.change || n.payload?.body;
+                return (
+                  <View key={n.id} style={s.notifRow}>
+                    <View style={s.notifIcon}><Text style={s.notifIconText}>{meta.icon}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.notifLabel}>{meta.label}</Text>
+                      {body ? <Text style={s.notifBody}>{String(body).slice(0, 120)}{String(body).length > 120 ? "…" : ""}</Text> : null}
+                      <Text style={s.notifTime}>{timeAgo(n.created_at)}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </View>
 
           <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}><Text style={s.signOutText}>Sign out</Text></TouchableOpacity>
@@ -294,61 +334,6 @@ export default function ProfileScreen() {
 
       {/* Tracker — the round-trip ledger, folded into Me (mirrors web) */}
       {activeTab === "tracker" && <YourIssuesScreen />}
-
-      {activeTab === "notifications" && (
-        <ScrollView style={s.root} contentContainerStyle={s.content}>
-          {!notifsLoaded ? (
-            <View style={s.center}><ActivityIndicator color={T.amber} /></View>
-          ) : (
-            <>
-              <View style={s.promiseBox}>
-                <Text style={s.notifNote}>
-                  Townhall only notifies you when something civically real is happening to you: an official response to an issue you raised or voted on, a meeting affecting your neighborhood within 48 hours, or something you're watching moving. We do not tell you about likes, replies, new posts, or other social activity.
-                </Text>
-                {prefsStatus ? (
-                  <Text style={[s.prefsStatus, prefsStatus === "error" && { color: T.redHi }]}>
-                    {prefsStatus === "saving" ? "Saving…" : prefsStatus === "saved" ? "Saved ✓" : "Couldn't save — check your connection."}
-                  </Text>
-                ) : null}
-                {PREF_ROWS.map((pref) => {
-                  const on = !!notifPrefs[pref.key];
-                  return (
-                    <View key={pref.key} style={s.prefRow}>
-                      <Text style={s.prefLabel}>{pref.label}</Text>
-                      <Pressable onPress={() => saveNotifPrefs(pref.key, !on)} style={[s.toggle, { backgroundColor: on ? T.teal : T.border }]}>
-                        <View style={[s.toggleKnob, { left: on ? 20 : 3 }]} />
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {notifications.length === 0 ? (
-                <View style={s.notifEmpty}>
-                  <Text style={s.notifEmptyIcon}>🔔</Text>
-                  <Text style={s.notifEmptyText}>You're all caught up.</Text>
-                  <Text style={s.notifEmptySub}>You'll be notified only when something civically real happens.</Text>
-                </View>
-              ) : (
-                notifications.map((n) => {
-                  const meta = NOTIF_TYPES[n.type] || { icon: "·", label: n.type };
-                  const body = n.payload?.message || n.payload?.response || n.payload?.title || n.payload?.change || n.payload?.body;
-                  return (
-                    <View key={n.id} style={[s.notifRow, !n.read && { backgroundColor: T.amberLo }]}>
-                      <View style={s.notifIcon}><Text style={s.notifIconText}>{meta.icon}</Text></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.notifLabel}>{meta.label}</Text>
-                        {body ? <Text style={s.notifBody}>{String(body).slice(0, 120)}{String(body).length > 120 ? "…" : ""}</Text> : null}
-                        <Text style={s.notifTime}>{timeAgo(n.created_at)}</Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </>
-          )}
-        </ScrollView>
-      )}
     </View>
   );
 }
@@ -392,7 +377,8 @@ const s = StyleSheet.create({
   roundTripTitle: { color: T.cream, fontSize: 14, fontWeight: "500" },
   roundTripDate: { color: T.tealHi, fontSize: 12, marginTop: 4 },
   notifNote: { color: T.creamDim, fontSize: 13, lineHeight: 20 },
-  manageLink: { color: T.amberHi, fontSize: 13, marginTop: 12 },
+  alertsDivider: { height: 1, backgroundColor: T.border, marginTop: 18, marginBottom: 14 },
+  recentLabel: { color: T.creamFaint, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
 
   signOutBtn: { marginTop: 10, borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 14, alignItems: "center" },
   signOutText: { color: T.creamDim, fontSize: 14 },
@@ -404,17 +390,12 @@ const s = StyleSheet.create({
   amberBtnText: { color: T.bg, fontSize: 13, fontWeight: "600" },
   disabled: { opacity: 0.4 },
 
-  promiseBox: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14, padding: 16, marginBottom: 14 },
   prefsStatus: { fontSize: 11, marginTop: 12, color: T.teal },
   prefRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 14 },
   prefLabel: { fontSize: 12, color: T.creamDim, flex: 1, marginRight: 12, lineHeight: 18 },
   toggle: { width: 40, height: 22, borderRadius: 99, justifyContent: "center" },
   toggleKnob: { position: "absolute", top: 3, width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff" },
 
-  notifEmpty: { alignItems: "center", paddingVertical: 48 },
-  notifEmptyIcon: { fontSize: 28, marginBottom: 12 },
-  notifEmptyText: { color: T.creamDim, fontSize: 14 },
-  notifEmptySub: { color: T.creamFaint, fontSize: 12, marginTop: 6, textAlign: "center", lineHeight: 18 },
   notifRow: { flexDirection: "row", gap: 12, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: T.border, marginBottom: 8 },
   notifIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, alignItems: "center", justifyContent: "center" },
   notifIconText: { fontSize: 13, color: T.amberHi },

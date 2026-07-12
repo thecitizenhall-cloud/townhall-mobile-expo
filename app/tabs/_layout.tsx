@@ -3,9 +3,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T } from "../../lib/theme";
 
 // One-screen shell (UX north star, mirrors web PR #64): the feed IS the app —
-// no tab bar. Me (Profile · Tracker · Alerts) opens from the avatar in the
-// feed header, and Tracker is folded into Me as a tab. The /tabs/* routes
-// survive so existing navigations and deep links keep working.
+// no tab bar. Me opens from the avatar in the feed header with two tabs,
+// Profile and Tracker; Alerts are folded inline into the Profile tab. The
+// /tabs/* routes survive so existing navigations and deep links keep working.
 export default function TabsLayout() {
   // The removed native headers used to clear the status bar — pad the top
   // inset here so screen content never sits under the notch.
