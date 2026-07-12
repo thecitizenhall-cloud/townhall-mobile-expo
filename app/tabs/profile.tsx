@@ -347,11 +347,14 @@ const s = StyleSheet.create({
 
   head: { backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border, paddingHorizontal: 20, paddingTop: 14 },
   headTitle: { fontSize: 18, color: T.cream, marginBottom: 12, fontWeight: "600" },
-  tabs: { flexDirection: "row" },
-  tab: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  tabActive: { borderBottomColor: T.amber },
-  tabText: { fontSize: 13, color: T.creamDim },
-  tabTextActive: { color: T.amberHi, fontWeight: "500" },
+  // Segmented control — selection is the amber fill, so both labels stay
+  // full-contrast (fixes the dim-text / unclear-pill problem). Mirrors web.
+  tabs: { flexDirection: "row", alignSelf: "flex-start", gap: 4, marginBottom: 12,
+    backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 11, padding: 4 },
+  tab: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 8 },
+  tabActive: { backgroundColor: T.amber },
+  tabText: { fontSize: 13, color: T.cream },
+  tabTextActive: { color: T.bg, fontWeight: "600" },
 
   identityCard: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 14 },
   avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: T.amberLo, borderWidth: 2, borderColor: T.amber, alignItems: "center", justifyContent: "center", marginBottom: 12 },
