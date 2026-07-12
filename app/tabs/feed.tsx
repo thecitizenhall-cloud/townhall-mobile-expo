@@ -13,6 +13,7 @@ import { getConcernCardsForNeighborhood } from "../../lib/concernCards";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
+import { WebView } from "react-native-webview";
 import CivicFeedItem from "../../components/CivicFeedItem";
 import PostCard from "../../components/PostCard";
 
@@ -632,6 +633,22 @@ export default function FeedScreen() {
             <Pressable onPress={handleUseMyLocation} disabled={locating} style={s.locBtn}>
               <Text style={s.locBtnText}>{locating ? "Locating…" : reportCoords ? "📍 Location attached" : "📍 Use my location"}</Text>
             </Pressable>
+            {/* MAPS_SPEC P1 — drag-a-pin, shared web map in a WebView (posts
+                {type:"pin",lat,lng}); seeded from the coords "Use my location"
+                already set. */}
+            <View style={s.mapWrap}>
+              <WebView
+                source={{ uri: `${SITE_URL}/map-picker${reportCoords ? `?lat=${reportCoords.lat}&lng=${reportCoords.lng}` : ""}` }}
+                style={s.map}
+                onMessage={(e) => {
+                  try {
+                    const m = JSON.parse(e.nativeEvent.data);
+                    if (m?.type === "pin" && typeof m.lat === "number") setReportCoords({ lat: m.lat, lng: m.lng });
+                  } catch {}
+                }}
+              />
+            </View>
+            <Text style={s.mapHint}>Drag the pin to the exact spot — the location is published with your report.</Text>
             <TextInput style={[s.composeInput, { minHeight: 70, marginTop: 8 }]} multiline placeholder="Describe the issue briefly"
               placeholderTextColor={T.creamFaint} value={reportDesc} onChangeText={setReportDesc} />
             <View style={s.composeBtns}>
@@ -712,6 +729,9 @@ const s = StyleSheet.create({
   reportTypeChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
   reportTypeText: { fontSize: 12 },
   locRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  mapWrap: { height: 190, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: T.border, marginTop: 8, backgroundColor: T.bg },
+  map: { flex: 1, backgroundColor: T.bg },
+  mapHint: { color: T.creamDim, fontSize: 11, marginTop: 6, lineHeight: 16 },
   locBtn: { borderWidth: 1, borderColor: T.border, borderRadius: 8, paddingVertical: 8, alignItems: "center" },
   locBtnText: { color: T.amberHi, fontSize: 12 },
 
