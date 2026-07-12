@@ -337,11 +337,21 @@ export default function FeedScreen() {
 
   async function handleReport() {
     if (!reportDesc.trim() || reporting) return;
+    if (!currentUser || !verified) { goVerify(); return; }   // MOB-3: no crash for anon
     setReporting(true);
     const { data: prof } = await supabase.from("profiles").select("neighborhood_id, municipality_id").eq("id", currentUser.id).maybeSingle();
+    // MOB-2: fall back to the resident's own town (derived from their
+    // neighborhood slug: "lakewood-general" -> "lakewood_nj") instead of
+    // hardcoding jackson_nj, which misfiled every Lakewood report under Jackson.
+    let muni = prof?.municipality_id || null;
+    if (!muni && prof?.neighborhood_id) {
+      const { data: hood } = await supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle();
+      const prefix = hood?.slug?.split("-")[0];
+      if (prefix) muni = `${prefix}_nj`;
+    }
     const { error } = await supabase.from("resident_reports").insert({
       reporter_id: currentUser.id, neighborhood_id: prof?.neighborhood_id || null,
-      municipality_id: prof?.municipality_id || "jackson_nj", report_type: reportType,
+      municipality_id: muni || "jackson_nj", report_type: reportType,
       title: REPORT_TYPES.find((r) => r.key === reportType)?.label || reportType,
       description: reportDesc.trim(), location_text: reportLoc.trim() || null,
       lat: reportCoords?.lat ?? null, lng: reportCoords?.lng ?? null, status: "open",
