@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
-  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView,
+  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -27,6 +27,11 @@ const TAGS: Record<string, { bg: string; color: string; border: string }> = {
   question: { bg: "#0A2A1E", color: "#4CAF80", border: "#1D9E75" },
   bulletin: { bg: "#1A1835", color: "#AFA9EC", border: "#534AB7" },
 };
+
+// Tags the general composer offers. Mirrors web: Banter is shelved (its TAGS
+// style is kept only so any legacy banter posts still render); Issue isn't
+// picked here — raising an issue is its own entry point that escalates.
+const COMPOSE_TAGS = ["question", "bulletin"];
 
 const REPORT_TYPES = [
   { key: "pothole", label: "Pothole", icon: "🕳️" },
@@ -66,7 +71,7 @@ export default function FeedScreen() {
   const [verified, setVerified] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "issue" | "banter" | "escalated" | "bulletin" | "near">("all");
+  const [filter, setFilter] = useState<"all" | "issue" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,7 +82,7 @@ export default function FeedScreen() {
   // Compose
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [draftTag, setDraftTag] = useState("banter");
+  const [draftTag, setDraftTag] = useState("question");
   const [posting, setPosting] = useState(false);
 
   // Report
@@ -406,8 +411,6 @@ export default function FeedScreen() {
     ];
   } else if (filter === "bulletin") {
     streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
-  } else if (filter === "banter") {
-    streamItems = nonBotPosts.filter((p) => (p.tags || []).includes("banter")).map((p) => ({ type: "post" as const, data: p }));
   } else if (filter === "escalated") {
     streamItems = nonBotPosts.filter((p) => p.escalated).map((p) => ({ type: "post" as const, data: p }));
   } else if (filter === "near") {
@@ -419,7 +422,6 @@ export default function FeedScreen() {
     { key: "all", label: "All", show: true },
     { key: "issue", label: "Council", show: concernCards.length > 0 },
     { key: "near", label: "📍 Near me", show: true },
-    { key: "banter", label: "Banter", show: true },
     { key: "escalated", label: "Escalated", show: hasEscalated },
     { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
     { key: "budget", label: "💰 Budget", show: true },
@@ -467,8 +469,12 @@ export default function FeedScreen() {
 
   const neighborhood = profile?.neighborhood || "your town";
 
+  // Android already resizes the window for the keyboard (adjustResize is the Expo
+  // default); layering behavior="padding" on top double-avoids and left the fixed
+  // Post composer under the keyboard when switching Report→Post. Use padding on
+  // iOS only and let Android's native resize do the work.
   return (
-    <KeyboardAvoidingView style={s.root} behavior="padding">
+    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <FlatList
         style={s.root}
         contentContainerStyle={s.content}
@@ -584,7 +590,6 @@ export default function FeedScreen() {
             <Text style={s.emptyText}>
               {filter === "all" ? `${neighborhood} is quiet right now.\nBe the first to share something.`
                 : filter === "escalated" ? "No escalated posts yet.\nEscalate a post to move it to the civic tracker."
-                : filter === "banter" ? "No banter posts yet.\nShare something with your neighbors."
                 : "Nothing here right now."}
             </Text>
           </View>
@@ -605,7 +610,8 @@ export default function FeedScreen() {
               placeholderTextColor={T.creamFaint} value={draft} maxLength={2000} onChangeText={setDraft} />
             <View style={s.composeFooter}>
               <View style={s.tagRow}>
-                {Object.entries(TAGS).map(([tag, ts]) => {
+                {COMPOSE_TAGS.map((tag) => {
+                  const ts = TAGS[tag];
                   const on = draftTag === tag;
                   return (
                     <Pressable key={tag} onPress={() => setDraftTag(tag)} style={[s.tagChip, { backgroundColor: on ? ts.bg : "transparent", borderColor: on ? ts.border : T.border }]}>
