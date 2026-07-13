@@ -145,14 +145,31 @@ export default function BudgetScreen() {
   const revTotal = revenues.reduce((n, l) => n + Number(l.amount), 0);
   const maxApprop = Math.max(...approps.map((l) => Number(l.amount)), 1);
   const maxRev = Math.max(...revenues.map((l) => Number(l.amount)), 1);
-  const avgMunicipal = meta.avg_home_municipal || null;
+
+  // ONE source of truth for every "your share" figure: derive it from the same
+  // meta.tax_breakdown the split bar draws, so the bar and the per-section headers
+  // can never disagree. A separate avg_home_municipal/avg_home_school field used to
+  // diverge from the breakdown (different year + filing), visibly for Lakewood
+  // ($2,916 vs $3,076). Mirrors web BudgetScreen + the budget_consistency view.
+  const muniSeg = (meta.tax_breakdown || []).find((s: any) => /municipal/i.test(s.label || ""));
+  const schoolSeg = (meta.tax_breakdown || []).find((s: any) => /school/i.test(s.label || ""));
+  const avgMunicipal = (muniSeg?.avg_home ?? meta.avg_home_municipal) || null;
+  const breakdownYear = meta.breakdown_year || budget.year;
 
   const BarRow = ({ line, max, color, yourShare }: { line: any; max: number; color: string; yourShare: number | null }) => {
     const amt = Number(line.amount);
+    // Free 2-point trend: year-over-year change where prior_amount is on file
+    // (municipal + revenue lines have it; school lines don't, so it just doesn't
+    // render). Direction only — up/down spending isn't inherently good or bad.
+    const prior = Number(line.prior_amount);
+    const delta = prior > 0 ? (amt - prior) / prior : null;
     return (
       <Pressable onPress={() => setPicked({ kind: "line", ...line })} style={s.barRow}>
         <View style={s.barLabels}>
           <Text style={s.barLabel} numberOfLines={1}>{line.label}</Text>
+          {delta != null && Math.abs(delta) >= 0.005 && (
+            <Text style={s.barDelta}>{delta >= 0 ? "▲" : "▼"}{Math.abs(delta * 100).toFixed(0)}%</Text>
+          )}
           <Text style={s.barAmt}>{fmtCompact(amt)}</Text>
           {yourShare != null && <Text style={s.barShare}>≈ {fmtUSD(yourShare)}/yr</Text>}
         </View>
@@ -213,8 +230,8 @@ export default function BudgetScreen() {
         {/* 3 · The municipal slice — appropriations with YOUR share */}
         <Text style={s.sectionLabel}>THE TOWNSHIP'S SLICE — {budget.year} MUNICIPAL BUDGET</Text>
         <Text style={s.blurb}>
-          {avgMunicipal ? <>Of your bill, <Text style={s.blurbStrong}>{fmtUSD(avgMunicipal)}</Text> a year runs the township</> : "The township budget"}
-          {" — "}{fmtCompact(appropTotal)} in all{meta.positions_ft ? `, ${meta.positions_ft} full-time and ${meta.positions_pt} part-time employees` : ""}.
+          {avgMunicipal ? <>Of your bill, <Text style={s.blurbStrong}>{fmtUSD(avgMunicipal)}</Text> ({breakdownYear} tax) went to municipal purposes</> : "The township budget"}
+          {" — the "}{budget.year} budget is {fmtCompact(appropTotal)} in all{meta.positions_ft ? `, ${meta.positions_ft} full-time and ${meta.positions_pt} part-time employees` : ""}.
           The amber figure is each line's share of that {avgMunicipal ? fmtUSD(avgMunicipal) : "bill"} (proportional estimate).
         </Text>
         <View style={s.card}>
@@ -237,12 +254,14 @@ export default function BudgetScreen() {
           const sm = school.meta || {};
           const sTotal = schoolLines.reduce((n: number, l: any) => n + Number(l.amount), 0);
           const sMax = Math.max(...schoolLines.map((l: any) => Number(l.amount)), 1);
-          const avgSchool = sm.avg_home_school || null;
+          // Same one-source rule: school "your share" comes from the split bar's
+          // Local School District segment, not a separate avg_home_school.
+          const avgSchool = (schoolSeg?.avg_home ?? sm.avg_home_school) || null;
           return (
             <>
               <Text style={s.sectionLabel}>THE SCHOOLS' SLICE — {(sm.school_year || school.year)} DISTRICT BUDGET</Text>
               <Text style={s.blurb}>
-                {avgSchool ? <>The biggest piece: <Text style={s.blurbStrong}>{fmtUSD(avgSchool)}</Text> of your bill funds {sm.district || "the school district"}</> : (sm.district || "The school district")}
+                {avgSchool ? <>The biggest piece: <Text style={s.blurbStrong}>{fmtUSD(avgSchool)}</Text> ({breakdownYear} tax) of your bill funds {sm.district || "the school district"}</> : (sm.district || "The school district")}
                 {" — a "}{fmtCompact(sTotal)} general fund{sm.per_pupil ? `, ${fmtUSD(sm.per_pupil)} per pupil` : ""}.
                 The amber figure is each line's share of that {avgSchool ? fmtUSD(avgSchool) : "share"} (proportional estimate).
               </Text>
@@ -311,6 +330,7 @@ const s = StyleSheet.create({
   barRow: { paddingVertical: 7 },
   barLabels: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 4 },
   barLabel: { color: T.cream, fontSize: 12.5, flex: 1 },
+  barDelta: { color: T.creamFaint, fontSize: 10.5, fontVariant: ["tabular-nums"] },
   barAmt: { color: T.creamDim, fontSize: 12, fontVariant: ["tabular-nums"] },
   barShare: { color: T.amberHi, fontSize: 12, width: 86, textAlign: "right", fontVariant: ["tabular-nums"] },
   barTrack: { height: 6, backgroundColor: T.border + "55", borderRadius: 3, overflow: "hidden" },
