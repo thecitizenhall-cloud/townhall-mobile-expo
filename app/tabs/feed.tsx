@@ -10,6 +10,7 @@ import { supabase, CivicItem } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
 import { getConcernCardsForNeighborhood } from "../../lib/concernCards";
+import CivicPulse from "../../components/CivicPulse";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
@@ -390,6 +391,12 @@ export default function FeedScreen() {
   const concernCards = civic.filter((c) => c.source === "civic_engine" && c.concern_card_id);
   const nonBotPosts = posts.filter((p) => !p.profiles?.is_bot);
 
+  // Town id for the Pulse: "<town>_<state>" from the resident's municipality_id
+  // (boards append a third token, e.g. "jackson_nj_planning"); default jackson_nj.
+  const townId = profile?.municipality_id
+    ? String(profile.municipality_id).split("_").slice(0, 2).join("_")
+    : "jackson_nj";
+
   // Stream items, filtered.
   let streamItems: FeedItem[] = [];
   const distIds = new Set(districtCards.map((c) => c.concern_card_id));
@@ -558,6 +565,10 @@ export default function FeedScreen() {
                 <Text style={s.firstTimeFoot}>Tap any item to see the full details and what residents are saying ↓</Text>
               </View>
             )}
+
+            {/* The Pulse — the feed's opening "feel" (web parity). Main feed
+                only; not on the first-session arrival, which has its own frame. */}
+            {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
 
             {/* Filter tabs */}
             {filterTabs.length > 1 && (
