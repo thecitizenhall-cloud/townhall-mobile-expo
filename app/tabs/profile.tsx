@@ -303,6 +303,12 @@ export default function ProfileScreen() {
               );
             })}
 
+            {/* Honest delivery note: alerts are in-app only for now — no phone
+                push or email is wired up yet. Say so plainly (mirrors web). */}
+            <Text style={s.deliveryNote}>
+              These alerts appear here inside Townhall — on your 🔔 bell and in the list below. We don't send phone push notifications or emails yet, so check back in to see them. (Push delivery is planned for a later release.)
+            </Text>
+
             <View style={s.alertsDivider} />
             <Text style={s.recentLabel}>Recent</Text>
             {!notifsLoaded ? (
@@ -398,6 +404,7 @@ const s = StyleSheet.create({
   prefLabel: { fontSize: 12, color: T.creamDim, flex: 1, marginRight: 12, lineHeight: 18 },
   toggle: { width: 40, height: 22, borderRadius: 99, justifyContent: "center" },
   toggleKnob: { position: "absolute", top: 3, width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff" },
+  deliveryNote: { fontSize: 11, color: T.creamFaint, lineHeight: 17, marginTop: 14, padding: 12, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 8 },
 
   notifRow: { flexDirection: "row", gap: 12, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: T.border, marginBottom: 8 },
   notifIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, alignItems: "center", justifyContent: "center" },
