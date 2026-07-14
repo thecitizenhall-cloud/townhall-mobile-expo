@@ -585,6 +585,19 @@ export default function IssueDetail() {
             <Text style={s.loadErrText}>{loadError}</Text>
           </Pressable>
         ) : null}
+        {issue.budget_ref ? (() => {
+          const b: any = issue.budget_ref;
+          const usd = (n: number) => n == null ? "" : (Math.abs(n) >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : Math.abs(n) >= 1e3 ? "$" + Math.round(n / 1e3) + "K" : "$" + Math.round(n));
+          const d = b.prior_amount > 0 ? (b.amount - b.prior_amount) / b.prior_amount : null;
+          return (
+            <Pressable style={s.budgetChip} onPress={() => router.push("/tabs/budget" as any)}>
+              <Text style={s.budgetChipText} numberOfLines={1}>
+                💰 Re: {b.label} · {b.year} budget{b.amount != null ? ` · ${usd(b.amount)}` : ""}
+                {d != null && Math.abs(d) >= 0.005 ? ` · ${d >= 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(0)}% this year` : ""} ›
+              </Text>
+            </Pressable>
+          );
+        })() : null}
         <View style={s.titleRow}>
           <Text style={[s.issueTitle, { flex: 1, marginBottom: 0 }]}>{issue.title}</Text>
           <Pressable
@@ -1088,6 +1101,8 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 80 },
   issueTitle: { color: T.cream, fontSize: 21, fontWeight: "600", lineHeight: 29, marginBottom: 12 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 12 },
+  budgetChip: { alignSelf: "flex-start", maxWidth: "100%", backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 10 },
+  budgetChipText: { color: T.amberHi, fontSize: 12 },
   followBtn: { borderWidth: 1, borderColor: T.amberMid, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginTop: 2 },
   followBtnOn: { backgroundColor: T.tealLo, borderColor: T.teal },
   followBtnText: { color: T.amberHi, fontSize: 12, fontWeight: "600" },
