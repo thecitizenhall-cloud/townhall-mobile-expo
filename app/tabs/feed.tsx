@@ -438,16 +438,33 @@ export default function FeedScreen() {
   // and rank by true distance (distance IS the filter — no neighborhood bound).
   async function enableNearMe() {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") { showToast("Location needed for Near me"); return; }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude: lat, longitude: lon } = pos.coords;
+      // Anchor on the resident's VERIFIED location — the center of the
+      // neighborhood they proved they live in — not the phone's current GPS
+      // position (which may be at work, traveling, or in another town). The exact
+      // verified coordinate is never stored (ZK boundary), so the neighborhood
+      // center is the privacy-safe home anchor; no location prompt needed. Guests,
+      // and residents whose neighborhood has no stored center, fall back to GPS.
+      let lat: number | null = null, lon: number | null = null;
+      if (currentUser?.id && profile?.neighborhood_id) {
+        const { data: hood } = await supabase.from("neighborhoods")
+          .select("center_lat, center_lng").eq("id", profile.neighborhood_id).maybeSingle();
+        if (hood?.center_lat != null && hood?.center_lng != null) {
+          lat = hood.center_lat; lon = hood.center_lng;
+        }
+      }
+      if (lat == null || lon == null) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") { showToast("Location needed for Near me"); return; }
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = pos.coords.latitude; lon = pos.coords.longitude;
+      }
+      const aLat: number = lat, aLon: number = lon; // non-null past the guard; safe inside closures
       // Opportunistic B3 backfill: residents onboarded before B3 have no
-      // district_id. We already hold their GPS here — resolve their district
-      // LOCALLY (point-in-polygon; never sent out) and store just the id.
-      // Fire-and-forget, one-shot (skips if already set). Activates B4 for them.
+      // district_id. Resolve their district LOCALLY from the anchor point
+      // (point-in-polygon; never sent out) and store just the id. Fire-and-forget,
+      // one-shot (skips if already set). Activates B4 for them.
       if (currentUser?.id && !profile?.district_id) {
-        detectDistrict(lat, lon)
+        detectDistrict(aLat, aLon)
           .then((d) => { if (d?.id) supabase.from("profiles").update({ district_id: d.id }).eq("id", currentUser.id); })
           .catch(() => {});
       }
@@ -457,7 +474,7 @@ export default function FeedScreen() {
       const ranked = (data || []).map((c: any) => ({
         source: "civic_engine", concern_card_id: c.id, title: c.title, body: c.summary,
         outcome_signal: c.outcome_signal, created_at: c.meeting_date, address: c.affected_area,
-        _dist: milesBetween(lat, lon, c.parcel_lat, c.parcel_lon),
+        _dist: milesBetween(aLat, aLon, c.parcel_lat, c.parcel_lon),
       })) as CivicItem[];
       ranked.sort((a, b) => (a._dist ?? 9e9) - (b._dist ?? 9e9));
       setNearbyCards(ranked.slice(0, 30));
