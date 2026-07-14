@@ -8,11 +8,17 @@
 // → one hue, direct value labels in text ink. No hover on a phone — tapping
 // a segment or line shows the exact-figures readout instead.
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
+import { isVerifiedForCurrentNeighborhood, goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
+
+// The stable key tying a raised issue back to a budget line (web parity):
+// match on (municipality_id, fcoa) — or label when there's no FCOA — not a uuid
+// FK, because budgets are re-seeded yearly. Mirrors migration 073's budget_ref.
+const lineKey = (muni: string, line: any) => `${muni}::${line.fcoa || line.label}`;
 
 // Validated categorical slots (dataviz reference palette, dark steps) against
 // T.surface — do not reorder: the ordering is the CVD-safety mechanism.
@@ -64,6 +70,61 @@ export default function BudgetScreen() {
   const [picked, setPicked] = useState<any>(null); // tapped segment/line readout
   const [school, setSchool] = useState<any>(null);
   const [schoolLines, setSchoolLines] = useState<any[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [verified, setVerified] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);   // lineKey of open drawer
+  const [issueCounts, setIssueCounts] = useState<Record<string, number>>({});
+  const [raise, setRaise] = useState<any>(null);                   // { line, muni, year, section }
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 3000); };
+
+  // Budget-linked issues are low-volume — fetch all, bucket client-side.
+  async function loadIssueCounts() {
+    const { data, error } = await supabase.from("civic_issues")
+      .select("budget_ref").not("budget_ref", "is", null).is("removed_at", null).limit(1000);
+    if (error) return;
+    const counts: Record<string, number> = {};
+    for (const r of data || []) {
+      const br: any = r.budget_ref; if (!br?.municipality_id) continue;
+      const k = `${br.municipality_id}::${br.fcoa || br.label}`;
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    setIssueCounts(counts);
+  }
+
+  async function submitRaise() {
+    if (!raise || submitting) return;
+    if (!verified) { setRaise(null); goVerify(); return; }
+    setSubmitting(true);
+    const { line, muni, year } = raise;
+    const { data: prof } = currentUser
+      ? await supabase.from("profiles").select("neighborhood_id").eq("id", currentUser.id).maybeSingle()
+      : { data: null };
+    const q = note.trim();
+    const amt = Number(line.amount);
+    const title = q ? (q.length > 90 ? q.slice(0, 90) + "…" : q) : `Question on ${line.label} — ${year} budget`;
+    const budget_ref = {
+      municipality_id: muni, year,
+      fcoa: line.fcoa || null, kind: line.kind, label: line.label,
+      amount: amt, prior_amount: line.prior_amount != null ? Number(line.prior_amount) : null,
+    };
+    const { data: issue, error } = await supabase.from("civic_issues").insert({
+      neighborhood_id: prof?.neighborhood_id || null,
+      title, description: q || null, status: "open", voice_count: 0, priority_pct: 0,
+      source_label: `Raised from the ${year} budget`, budget_ref,
+    }).select().single();
+    setSubmitting(false);
+    if (error) {
+      const denied = error.code === "42501" || /policy|permission|residen/i.test(error.message || "");
+      showToast(denied ? "Verify your residency to raise a civic issue." : "Couldn't raise the issue — try again.");
+      return;
+    }
+    setIssueCounts((c) => { const k = lineKey(muni, line); return { ...c, [k]: (c[k] || 0) + 1 }; });
+    setRaise(null); setNote("");
+    router.push({ pathname: "/issue/[id]", params: { id: issue.id } });
+  }
 
   useEffect(() => { load(); }, []);
   async function load() {
@@ -73,7 +134,9 @@ export default function BudgetScreen() {
       // towns without a filing fall back to the flagship (Jackson).
       let muni = "jackson_nj";
       const user = await getCurrentUser();
+      setCurrentUser(user);
       if (user) {
+        isVerifiedForCurrentNeighborhood(user.id).then(setVerified).catch(() => {});
         const { data: p } = await supabase.from("profiles").select("neighborhood_id").eq("id", user.id).maybeSingle();
         if (p?.neighborhood_id) {
           const { data: hood } = await supabase.from("neighborhoods").select("slug").eq("id", p.neighborhood_id).maybeSingle();
@@ -104,6 +167,7 @@ export default function BudgetScreen() {
           .select("*").eq("budget_id", sb.id).order("sort");
         setSchool(sb); setSchoolLines(sl || []);
       }
+      loadIssueCounts();
     } catch (e) {
       console.error("Budget load error:", e);
       setLoadError("Couldn't load the budget — tap to retry.");
@@ -156,27 +220,66 @@ export default function BudgetScreen() {
   const avgMunicipal = (muniSeg?.avg_home ?? meta.avg_home_municipal) || null;
   const breakdownYear = meta.breakdown_year || budget.year;
 
-  const BarRow = ({ line, max, color, yourShare }: { line: any; max: number; color: string; yourShare: number | null }) => {
+  const BarRow = ({ line, max, color, yourShare, muni, year, section, shareOfTotal }:
+    { line: any; max: number; color: string; yourShare: number | null; muni: string; year: any; section: string; shareOfTotal: number | null }) => {
     const amt = Number(line.amount);
     // Free 2-point trend: year-over-year change where prior_amount is on file
     // (municipal + revenue lines have it; school lines don't, so it just doesn't
     // render). Direction only — up/down spending isn't inherently good or bad.
     const prior = Number(line.prior_amount);
     const delta = prior > 0 ? (amt - prior) / prior : null;
+    const k = lineKey(muni, line);
+    const count = issueCounts[k] || 0;
+    const open = expanded === k;
     return (
-      <Pressable onPress={() => setPicked({ kind: "line", ...line })} style={s.barRow}>
-        <View style={s.barLabels}>
-          <Text style={s.barLabel} numberOfLines={1}>{line.label}</Text>
-          {delta != null && Math.abs(delta) >= 0.005 && (
-            <Text style={s.barDelta}>{delta >= 0 ? "▲" : "▼"}{Math.abs(delta * 100).toFixed(0)}%</Text>
-          )}
-          <Text style={s.barAmt}>{fmtCompact(amt)}</Text>
-          {yourShare != null && <Text style={s.barShare}>≈ {fmtUSD(yourShare)}/yr</Text>}
-        </View>
-        <View style={s.barTrack}>
-          <View style={[s.barFill, { width: `${Math.max((amt / max) * 100, 0.5)}%`, backgroundColor: color }]} />
-        </View>
-      </Pressable>
+      <View style={s.barRow}>
+        <Pressable onPress={() => setExpanded(open ? null : k)}>
+          <View style={s.barLabels}>
+            <Text style={s.barLabel} numberOfLines={1}>{line.label}</Text>
+            {count > 0 && <Text style={s.barFlag}>{count} ⚑</Text>}
+            {delta != null && Math.abs(delta) >= 0.005 && (
+              <Text style={s.barDelta}>{delta >= 0 ? "▲" : "▼"}{Math.abs(delta * 100).toFixed(0)}%</Text>
+            )}
+            <Text style={s.barAmt}>{fmtCompact(amt)}</Text>
+            {yourShare != null && <Text style={s.barShare}>≈ {fmtUSD(yourShare)}/yr</Text>}
+          </View>
+          <View style={s.barTrack}>
+            <View style={[s.barFill, { width: `${Math.max((amt / max) * 100, 0.5)}%`, backgroundColor: color }]} />
+          </View>
+        </Pressable>
+
+        {open && (
+          <View style={s.drawer}>
+            <View style={s.drawerRow}><Text style={s.drawerK}>This year</Text><Text style={s.drawerV}>{fmtUSD(amt)}</Text></View>
+            {prior > 0 && (<>
+              <View style={s.drawerRow}><Text style={s.drawerK}>Prior year</Text><Text style={s.drawerV}>{fmtUSD(prior)}</Text></View>
+              <View style={s.drawerRow}><Text style={s.drawerK}>Change</Text>
+                <Text style={[s.drawerV, { color: (delta as number) >= 0 ? T.amberHi : T.tealHi }]}>
+                  {(delta as number) >= 0 ? "+" : "−"}{fmtUSD(Math.abs(amt - prior))} ({(delta as number) >= 0 ? "+" : "−"}{Math.abs((delta as number) * 100).toFixed(1)}%)
+                </Text>
+              </View>
+            </>)}
+            {shareOfTotal != null && (
+              <View style={s.drawerRow}><Text style={s.drawerK}>Share of {section}</Text><Text style={s.drawerV}>{(shareOfTotal * 100).toFixed(1)}%</Text></View>
+            )}
+            {yourShare != null && (
+              <View style={s.drawerRow}><Text style={s.drawerK}>Your house, ≈/yr</Text><Text style={[s.drawerV, { color: T.amberHi }]}>{fmtUSD(yourShare)}</Text></View>
+            )}
+            {line.ft_positions != null && Number(line.ft_positions) > 0 && (
+              <View style={s.drawerRow}><Text style={s.drawerK}>Staff</Text><Text style={s.drawerV}>{Number(line.ft_positions)} FT{line.pt_positions ? ` · ${Number(line.pt_positions)} PT` : ""}</Text></View>
+            )}
+            <View style={s.drawerFoot}>
+              <Text style={s.drawerNote}>
+                {count > 0 ? `${count} resident${count === 1 ? " is" : "s are"} questioning this line.` : "Something look off? Put it on the record."}
+              </Text>
+              <Pressable style={s.raiseBtn}
+                onPress={() => { if (!verified) { goVerify(); return; } setNote(""); setRaise({ line, muni, year, section }); }}>
+                <Text style={s.raiseBtnText}>Raise a question</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </View>
     );
   };
 
@@ -237,6 +340,8 @@ export default function BudgetScreen() {
         <View style={s.card}>
           {approps.map((l) => (
             <BarRow key={l.id} line={l} max={maxApprop} color={T.amber}
+              muni={budget.municipality_id} year={budget.year} section="the municipal budget"
+              shareOfTotal={appropTotal > 0 ? Number(l.amount) / appropTotal : null}
               yourShare={avgMunicipal ? (Number(l.amount) / appropTotal) * avgMunicipal : null} />
           ))}
           <Text style={[s.readout, picked?.kind === "line" && s.readoutActive]}>
@@ -268,6 +373,8 @@ export default function BudgetScreen() {
               <View style={s.card}>
                 {schoolLines.map((l: any) => (
                   <BarRow key={l.id} line={l} max={sMax} color="#3987E5"
+                    muni={school.municipality_id} year={sm.school_year || school.year} section="the school budget"
+                    shareOfTotal={sTotal > 0 ? Number(l.amount) / sTotal : null}
                     yourShare={avgSchool ? (Number(l.amount) / sTotal) * avgSchool : null} />
                 ))}
                 <Text style={[s.readout, picked?.kind === "line" && picked?.budget_id === school.id && s.readoutActive]}>
@@ -284,7 +391,10 @@ export default function BudgetScreen() {
         <Text style={s.sectionLabel}>HOW THE {fmtCompact(revTotal)} IS PAID FOR</Text>
         <View style={s.card}>
           {revenues.map((l) => (
-            <BarRow key={l.id} line={l} max={maxRev} color="#199E70" yourShare={null} />
+            <BarRow key={l.id} line={l} max={maxRev} color="#199E70"
+              muni={budget.municipality_id} year={budget.year} section="revenues"
+              shareOfTotal={revTotal > 0 ? Number(l.amount) / revTotal : null}
+              yourShare={null} />
           ))}
           <Text style={s.readout}>Property tax is only part of it — surplus, state aid, and fees carry the rest.</Text>
         </View>
@@ -295,6 +405,43 @@ export default function BudgetScreen() {
           . "Your share" figures are proportional estimates for the average assessed home, not a bill line.
         </Text>
       </ScrollView>
+
+      {/* Raise-a-question composer */}
+      <Modal visible={!!raise} transparent animationType="slide" onRequestClose={() => !submitting && setRaise(null)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.modalWrap}>
+          <Pressable style={s.modalBackdrop} onPress={() => !submitting && setRaise(null)} />
+          <View style={s.sheet}>
+            <Text style={s.sheetKicker}>RAISE A QUESTION</Text>
+            {raise && (
+              <View style={s.sheetLine}>
+                <Text style={s.sheetLineLabel}>{raise.line.label}</Text>
+                <Text style={s.sheetLineMeta}>
+                  {fmtUSD(Number(raise.line.amount))} · {raise.year} {raise.section}
+                  {Number(raise.line.prior_amount) > 0
+                    ? ` · ${Number(raise.line.amount) >= Number(raise.line.prior_amount) ? "+" : "−"}${Math.abs(((Number(raise.line.amount) - Number(raise.line.prior_amount)) / Number(raise.line.prior_amount)) * 100).toFixed(0)}% vs prior year`
+                    : ""}
+                </Text>
+              </View>
+            )}
+            <TextInput value={note} onChangeText={setNote} multiline
+              placeholder="What's your question or concern about this line? (optional)"
+              placeholderTextColor={T.creamFaint} style={s.sheetInput} />
+            <Text style={s.sheetHint}>
+              This opens a public civic issue linked to this budget line. Neighbors can weigh in and officials can respond — the figures above are saved as they read today.
+            </Text>
+            <View style={s.sheetBtns}>
+              <Pressable style={s.sheetCancel} onPress={() => !submitting && setRaise(null)}>
+                <Text style={s.sheetCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={[s.sheetSubmit, submitting && { opacity: 0.7 }]} onPress={submitRaise} disabled={submitting}>
+                <Text style={s.sheetSubmitText}>{submitting ? "Raising…" : "Raise this question →"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {toast && (<View style={s.toast}><Text style={s.toastText}>{toast}</Text></View>)}
     </View>
   );
 }
@@ -315,6 +462,31 @@ const s = StyleSheet.create({
   sectionLabel: { color: T.creamFaint, fontSize: 10, fontWeight: "600", letterSpacing: 1, marginTop: 18, marginBottom: 8 },
   heroLead: { color: T.creamDim, fontSize: 13 },
   hero: { color: T.cream, fontSize: 44, fontWeight: "600", marginVertical: 2 },
+  barFlag: { color: T.amberHi, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 99, fontSize: 9, paddingHorizontal: 6, paddingVertical: 1, overflow: "hidden" },
+  drawer: { marginTop: 8, marginBottom: 4, padding: 12, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 11 },
+  drawerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 3 },
+  drawerK: { color: T.creamDim, fontSize: 12, flex: 1 },
+  drawerV: { color: T.cream, fontSize: 12, fontVariant: ["tabular-nums"], textAlign: "right" },
+  drawerFoot: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: T.border, flexDirection: "row", alignItems: "center", gap: 10 },
+  drawerNote: { color: T.creamDim, fontSize: 11.5, flex: 1, lineHeight: 16 },
+  raiseBtn: { backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 9, paddingHorizontal: 13, paddingVertical: 7 },
+  raiseBtnText: { color: T.amberHi, fontSize: 12, fontWeight: "600" },
+  modalWrap: { flex: 1, justifyContent: "flex-end" },
+  modalBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.6)" },
+  sheet: { backgroundColor: T.surface, borderTopWidth: 1, borderTopColor: T.border, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 18, paddingBottom: 26 },
+  sheetKicker: { color: T.creamFaint, fontSize: 11, fontWeight: "600", letterSpacing: 1, marginBottom: 8 },
+  sheetLine: { padding: 10, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, marginBottom: 12 },
+  sheetLineLabel: { color: T.cream, fontSize: 13.5, marginBottom: 3 },
+  sheetLineMeta: { color: T.creamDim, fontSize: 11.5, fontVariant: ["tabular-nums"] },
+  sheetInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, color: T.cream, fontSize: 13, padding: 11, minHeight: 88, textAlignVertical: "top" },
+  sheetHint: { color: T.creamFaint, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  sheetBtns: { flexDirection: "row", gap: 10, marginTop: 14 },
+  sheetCancel: { borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11, justifyContent: "center" },
+  sheetCancelText: { color: T.creamDim, fontSize: 13 },
+  sheetSubmit: { flex: 1, backgroundColor: T.amberHi, borderRadius: 10, paddingVertical: 11, alignItems: "center" },
+  sheetSubmitText: { color: T.bg, fontSize: 13, fontWeight: "600" },
+  toast: { position: "absolute", bottom: 24, alignSelf: "center", backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, maxWidth: "90%" },
+  toastText: { color: T.cream, fontSize: 12.5 },
   heroSub: { color: T.creamDim, fontSize: 12.5, lineHeight: 18, marginBottom: 4 },
   card: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14, padding: 14, marginTop: 10 },
   stack: { flexDirection: "row", height: 18, borderRadius: 5, overflow: "hidden" },
