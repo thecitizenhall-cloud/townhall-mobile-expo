@@ -8,7 +8,7 @@ type Props = {
 };
 
 // Human-readable label per source. The route prefixes titles with emoji, so the
-// label here is the small caps tag above the title (matches the web feed).
+// label here is the small caps tag under the title (matches the web feed).
 const SOURCE_LABEL: Record<CivicItem["source"], string> = {
   civic_engine: "Council",
   seeclickfix: "311 · SeeClickFix",
@@ -17,52 +17,49 @@ const SOURCE_LABEL: Record<CivicItem["source"], string> = {
   noaa: "Weather Alert",
 };
 
+// Status dot color from the card's outcome — mirrors the web feed. Approved =
+// green, denied/rejected = red, deferred/tabled = amber, otherwise neutral.
+function dotFor(item: CivicItem): string {
+  if (item.source === "noaa") return "#E57373";
+  const sig = String(item.outcome_signal || "").toLowerCase();
+  if (/approv/.test(sig)) return "#4CAF80";
+  if (/deny|denied|reject/.test(sig)) return "#E57373";
+  if (/defer|tabl/.test(sig)) return "#F0B84A";
+  return "#9A9188";
+}
+
 export default function CivicFeedItem({ item, onPress }: Props) {
   const isAlert = item.source === "noaa";
   const label = SOURCE_LABEL[item.source] ?? item.source;
+  const dot = dotFor(item);
 
   return (
     <TouchableOpacity
-      style={[s.card, isAlert && s.cardAlert]}
+      style={[s.card, { borderLeftColor: dot }, isAlert && s.cardAlert]}
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
     >
-      <View style={s.header}>
-        <Text style={[s.source, isAlert && s.sourceAlert]}>
-          {label.toUpperCase()}
-        </Text>
-        {item.outcome_signal && (
-          <View style={s.outcomePill}>
-            <Text style={s.outcomeText}>Outcome: {item.outcome_signal}</Text>
-          </View>
-        )}
+      {/* Line 1 — status dot + title (wraps to max 2 lines). */}
+      <View style={s.headline}>
+        <View style={[s.dot, { backgroundColor: dot }]} />
+        <Text style={s.title} numberOfLines={2}>{item.title}</Text>
       </View>
 
-      <Text style={s.title} numberOfLines={3}>{item.title}</Text>
-
-      {item.body ? (
-        <Text style={s.body} numberOfLines={3}>{item.body}</Text>
-      ) : null}
-
-      <View style={s.footer}>
-        <Text style={s.date}>
-          {new Date(item.created_at).toLocaleDateString("en-US", {
-            month: "short", day: "numeric",
-          })}
+      {/* Line 2 — one compact meta line. */}
+      <View style={s.metaRow}>
+        <Text style={[s.source, isAlert && s.sourceAlert]}>{label.toUpperCase()}</Text>
+        <Text style={s.meta}>
+          {" · "}
+          {new Date(item.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </Text>
         {typeof item._dist === "number" && (
-          <Text style={[s.date, { color: T.tealHi, fontWeight: "600" }]}>
-            · {item._dist < 0.1 ? "<0.1" : item._dist.toFixed(1)} mi away
+          <Text style={[s.meta, s.metaHi]}>
+            {" · "}{item._dist < 0.1 ? "<0.1" : item._dist.toFixed(1)} mi
           </Text>
         )}
         {item._inDistrict && (
-          <Text style={[s.date, { color: T.tealHi, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4 }]}>
-            · Your district
-          </Text>
+          <Text style={[s.meta, s.district]}> · YOUR DISTRICT</Text>
         )}
-        {item.address ? (
-          <Text style={s.address} numberOfLines={1}>{item.address}</Text>
-        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -73,24 +70,20 @@ const s = StyleSheet.create({
     backgroundColor: T.surface,
     borderWidth: 1,
     borderColor: T.border,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 12,
   },
   cardAlert: { borderColor: T.red, backgroundColor: T.redLo },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
-  source: {
-    color: T.amberHi, fontSize: 10, fontWeight: "600",
-    letterSpacing: 0.8, flexShrink: 1,
-  },
+  headline: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  dot: { width: 9, height: 9, borderRadius: 5, flexShrink: 0, marginTop: 5 },
+  title: { flex: 1, color: T.cream, fontSize: 15, fontWeight: "500", lineHeight: 20 },
+  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 4, marginLeft: 19 },
+  source: { color: T.amberHi, fontSize: 10, fontWeight: "600", letterSpacing: 0.6 },
   sourceAlert: { color: T.red },
-  outcomePill: {
-    backgroundColor: T.tealLo, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
-  },
-  outcomeText: { color: T.teal, fontSize: 10, fontWeight: "600" },
-  title: { color: T.cream, fontSize: 15, fontWeight: "500", lineHeight: 22, marginBottom: 8 },
-  body: { color: T.creamDim, fontSize: 13, lineHeight: 20, marginBottom: 10 },
-  footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  date: { color: T.creamFaint, fontSize: 11 },
-  address: { color: T.creamFaint, fontSize: 11, flexShrink: 1, textAlign: "right" },
+  meta: { color: T.creamFaint, fontSize: 10 },
+  metaHi: { color: T.tealHi, fontWeight: "600" },
+  district: { color: T.tealHi, fontWeight: "700", letterSpacing: 0.4 },
 });
