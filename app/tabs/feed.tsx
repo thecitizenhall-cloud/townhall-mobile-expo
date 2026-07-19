@@ -117,7 +117,7 @@ export default function FeedScreen() {
     const channel = supabase
       .channel("feed-posts")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, async (payload: any) => {
-        const { data } = await supabase.from("posts").select("*, profiles(display_name,neighborhood,is_bot)").eq("id", payload.new.id).maybeSingle();
+        const { data } = await supabase.from("posts").select("*, profiles(display_name,neighborhood,is_bot,is_official)").eq("id", payload.new.id).maybeSingle();
         if (data) setPosts((prev) => (prev.some((p) => p.id === data.id) ? prev : [data, ...prev]));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "posts" }, (payload: any) => {
