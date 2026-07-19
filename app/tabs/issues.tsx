@@ -152,9 +152,15 @@ export default function YourIssuesScreen() {
         { data: changed },
         { data: movedNotifs },
       ] = await Promise.all([
+        // Municipality-wide issues (null neighborhood_id) are always included
+        // alongside the resident's own neighborhood — mirrors web
+        // TownScreen.loadIssues() (commit dd2afd6) — plus removed_at, which
+        // web's query doesn't filter but this one safely keeps.
         prof?.neighborhood_id
           ? supabase.from("civic_issues")
-              .select("*").eq("neighborhood_id", prof.neighborhood_id).is("removed_at", null).order("voice_count", { ascending: false }).limit(5)
+              .select("*").or(`neighborhood_id.eq.${prof.neighborhood_id},neighborhood_id.is.null`)
+              .neq("status", "resolved").is("removed_at", null)
+              .order("voice_count", { ascending: false }).limit(5)
           : Promise.resolve({ data: [] as any[] }),
         watchedCardIds.length
           ? supabase.from("concern_cards")

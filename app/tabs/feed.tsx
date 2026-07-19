@@ -195,6 +195,17 @@ export default function FeedScreen() {
         .order("created_at", { ascending: false }).limit(50);
       if (p?.neighborhood_id) postQ = postQ.eq("neighborhood_id", p.neighborhood_id);
 
+      // Scope to the viewer's own neighborhood so issues (and the welcome
+      // card's "Happening in <neighborhood> now" preview) reflect THEIR town,
+      // not any town. Municipality-wide issues (null neighborhood_id) are
+      // always included; a resident without a neighborhood sees only those.
+      // Mirrors web TownScreen.loadIssues() (commit dd2afd6).
+      const hoodId = p?.neighborhood_id ?? null;
+      let issuesQ = supabase.from("civic_issues").select("*").neq("status", "resolved");
+      issuesQ = hoodId
+        ? issuesQ.or(`neighborhood_id.eq.${hoodId},neighborhood_id.is.null`)
+        : issuesQ.is("neighborhood_id", null);
+
       // ── Everything that needs only `p`/user.id, in parallel ────────────
       // (verification, civic feed, posts, open issues, both watch tables) —
       // previously a long serial chain with issues + watch state stranded last.
@@ -203,7 +214,7 @@ export default function FeedScreen() {
         civicPromise,
         districtPromise,
         postQ,
-        supabase.from("civic_issues").select("*").neq("status", "resolved").order("voice_count", { ascending: false }).limit(20),
+        issuesQ.order("voice_count", { ascending: false }).limit(20),
         supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
         supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
       ]);

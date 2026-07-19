@@ -70,6 +70,24 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Forgot-password: no native reset UI here — the emailed link opens web's
+  // existing /reset-password page (which does the actual recovery-session +
+  // updateUser flow) in the phone's browser. Mirrors OnboardingScreen mode="reset".
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  async function handleReset() {
+    if (!email.trim()) { setError("Enter your email above first."); return; }
+    setError("");
+    setResetLoading(true);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${SITE_URL}/reset-password`,
+    });
+    setResetLoading(false);
+    if (err) { setError(err.message); return; }
+    setResetSent(true);
+  }
 
   async function handleLogin() {
     if (!email.trim() || !password) return;
@@ -123,38 +141,71 @@ export default function Login() {
             placeholder="you@example.com"
           />
 
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16, marginBottom: 6 }}>
-            <Text style={[s.label, { marginBottom: 0 }]}>Password</Text>
-            <TouchableOpacity onPress={() => setShowPw(v => !v)} hitSlop={10}>
-              <Text style={{ color: T.amberHi, fontSize: 12, fontWeight: "600" }}>{showPw ? "Hide" : "Show"}</Text>
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            style={s.input}
-            value={password}
-            onChangeText={(v) => { setPassword(v); if (error) setError(""); }}
-            secureTextEntry={!showPw}
-            autoComplete="current-password"
-            returnKeyType="done"
-            onSubmitEditing={handleLogin}
-            placeholderTextColor={T.creamFaint}
-            placeholder="••••••••"
-          />
+          {resetMode ? (
+            resetSent ? (
+              <Text style={{ color: T.creamDim, fontSize: 13, lineHeight: 19, marginTop: 12 }}>
+                Check your email for a password reset link.
+              </Text>
+            ) : (
+              <>
+                <Text style={{ color: T.creamDim, fontSize: 12.5, lineHeight: 18, marginTop: 10, marginBottom: 12 }}>
+                  Enter your email above and we'll send you a reset link.
+                </Text>
+                {error ? <Text style={{ color: T.redHi, fontSize: 13, lineHeight: 18, marginBottom: 10 }}>{error}</Text> : null}
+                <TouchableOpacity
+                  style={[s.btn, resetLoading && s.btnDisabled]}
+                  onPress={handleReset}
+                  disabled={resetLoading}
+                >
+                  {resetLoading
+                    ? <ActivityIndicator color={T.bg} />
+                    : <Text style={s.btnText}>Send reset link</Text>}
+                </TouchableOpacity>
+              </>
+            )
+          ) : (
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16, marginBottom: 6 }}>
+                <Text style={[s.label, { marginBottom: 0 }]}>Password</Text>
+                <TouchableOpacity onPress={() => setShowPw(v => !v)} hitSlop={10}>
+                  <Text style={{ color: T.amberHi, fontSize: 12, fontWeight: "600" }}>{showPw ? "Hide" : "Show"}</Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={s.input}
+                value={password}
+                onChangeText={(v) => { setPassword(v); if (error) setError(""); }}
+                secureTextEntry={!showPw}
+                autoComplete="current-password"
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+                placeholderTextColor={T.creamFaint}
+                placeholder="••••••••"
+              />
 
-          {error ? <Text style={{ color: T.redHi, fontSize: 13, lineHeight: 18, marginTop: 10 }}>{error}</Text> : null}
+              {error ? <Text style={{ color: T.redHi, fontSize: 13, lineHeight: 18, marginTop: 10 }}>{error}</Text> : null}
 
-          <TouchableOpacity
-            style={[s.btn, loading && s.btnDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator color={T.bg} />
-              : <Text style={s.btnText}>Sign in</Text>}
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btn, loading && s.btnDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading
+                  ? <ActivityIndicator color={T.bg} />
+                  : <Text style={s.btnText}>Sign in</Text>}
+              </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.push("/auth/register")}>
-            <Text style={s.link}>New to Townhall? Create an account</Text>
+              <TouchableOpacity onPress={() => { setResetMode(true); setError(""); }}>
+                <Text style={s.link}>Forgot your password?</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity onPress={() => {
+            if (resetMode) { setResetMode(false); setResetSent(false); setError(""); }
+            else router.push("/auth/register");
+          }}>
+            <Text style={s.link}>{resetMode ? "Back to sign in" : "New to Townhall? Create an account"}</Text>
           </TouchableOpacity>
 
           <View style={s.divider} />
