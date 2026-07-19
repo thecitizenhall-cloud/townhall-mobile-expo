@@ -14,6 +14,7 @@ import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting 
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
 import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import IssueTimeline from "../../components/IssueTimeline";
+import CoalitionBar from "../../components/CoalitionBar";
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 
@@ -31,6 +32,7 @@ export default function IssueDetail() {
   const { id: issueId } = useLocalSearchParams<{ id: string }>();
 
   const [issue, setIssue] = useState<any>(null);
+  const [coalThreshold, setCoalThreshold] = useState<number | null>(null); // per-neighborhood coalition line (RPC); null → fallback default
   const [watcherCount, setWatcherCount] = useState(0);
   const [replies, setReplies] = useState<any[]>([]);
   const [expertAnswers, setExpertAnswers] = useState<any[]>([]);
@@ -110,6 +112,20 @@ export default function IssueDetail() {
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueId]);
+
+  // Coalition threshold — how many verified residents make this issue a formal
+  // request. Read from the DB (scales with the verified-resident roll); on any
+  // failure the render falls back to a flat default, so the bar is never worse
+  // than the no-RPC version. (web parity: IssueDetailScreen coalThreshold effect)
+  useEffect(() => {
+    if (!issue) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("coalition_threshold", { nbhd: issue.neighborhood_id ?? null });
+      if (!cancelled && !error && typeof data === "number") setCoalThreshold(data);
+    })();
+    return () => { cancelled = true; };
+  }, [issue?.neighborhood_id, issue?.id]);
 
   // Distill the For/Against lines with Haiku, cached SHARED on the issue row, so
   // all viewers reuse one result. On any failure we keep the raw strongest-
@@ -679,6 +695,16 @@ export default function IssueDetail() {
             </Text>
           )}
         </View>
+
+        {/* Coalition threshold — count is real (voice_count); threshold is the
+            per-neighborhood line from coalition_threshold() (RPC), falling back
+            to a flat 8 until it resolves. See CoalitionBar. */}
+        <CoalitionBar
+          count={issue.voice_count || 0}
+          threshold={coalThreshold ?? 8}
+          status={issue.status}
+          council={issue.neighborhoods?.name ? `${issue.neighborhoods.name} Council` : "the council"}
+        />
 
         {description ? <Text style={s.description}>{description}</Text> : null}
         {issue.source_label ? <Text style={s.sourceLabel}>{issue.source_label}</Text> : null}

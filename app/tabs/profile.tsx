@@ -11,6 +11,7 @@ import { reservedNameError } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
+import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } from "../../lib/push";
 
 type WeekStats = { read: number; watched: number; voted: number; responded: number };
 
@@ -27,6 +28,19 @@ const PREF_ROWS = [
   { key: "watched_item_moved", label: "A civic issue you're following has been updated" },
 ] as const;
 
+// Trust-tier ladder — mirrored verbatim from web (components/ProfileScreen.jsx
+// TIERS): same keys, labels, thresholds (trust_score points), and accent colors.
+// Standing rises with trust_score; the current tier is highlighted and tiers not
+// yet reached are dimmed.
+const TIERS = [
+  { key: "resident",    label: "Resident",        pts: 0,    color: T.creamDim, dot: T.creamFaint },
+  { key: "contributor", label: "Contributor",     pts: 200,  color: T.amberHi,  dot: T.amber },
+  { key: "voice",       label: "Community voice",  pts: 600,  color: T.blueHi,   dot: T.blue },
+  { key: "moderator",   label: "Moderator",        pts: 1200, color: T.purpleHi, dot: T.purple },
+] as const;
+const currentTier = (score: number) => [...TIERS].reverse().find((t) => score >= t.pts) || TIERS[0];
+const nextTier = (score: number) => TIERS.find((t) => t.pts > score) || null;
+
 export default function ProfileScreen() {
   // /tabs/profile?tab=tracker opens straight onto the Tracker tab (the old
   // standalone tracker destination, now folded into Me).
@@ -38,6 +52,7 @@ export default function ProfileScreen() {
 
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null);
   const [postCount, setPostCount] = useState(0);
+  const [answerCount, setAnswerCount] = useState(0);
   const [watchedCount, setWatchedCount] = useState<number | null>(null);
   const [lastRoundTrip, setLastRoundTrip] = useState<{ title: string; date: string } | null | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -51,6 +66,23 @@ export default function ProfileScreen() {
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({ round_trip_closed: true, meeting_imminent: true, watched_item_moved: true });
   const [prefsStatus, setPrefsStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Device (phone) push opt-in. `pushSupported` is false on simulators/emulators
+  // (Expo can't mint a token there); `pushOn` reflects OS permission on mount and
+  // the last successful subscribe/unsubscribe after that.
+  const [pushSupported, setPushSupported] = useState(true);
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    getDevicePushState().then(({ supported, granted }) => {
+      if (!active) return;
+      setPushSupported(supported);
+      setPushOn(granted);
+    });
+    return () => { active = false; };
+  }, []));
 
   // Reload on focus so activity/standing reflect actions taken on other tabs.
   useFocusEffect(useCallback(() => { load(); }, []));
@@ -71,9 +103,11 @@ export default function ProfileScreen() {
       // ── Phase 1: everything keyed on user.id, in parallel ──────────────
       // The week-stats stay a nested allSettled so a single missing count
       // table can't reject the whole batch (table-tolerance preserved).
-      const [profRes, postsRes, weekStats, unreadRes, wCountRes, roundTripsRes] = await Promise.all([
+      const [profRes, postsRes, answersRes, weekStats, unreadRes, wCountRes, roundTripsRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("author_id", user.id),
+        // Expert answers authored — same source/shape as web (expert_answers.expert_id).
+        supabase.from("expert_answers").select("*", { count: "exact", head: true }).eq("expert_id", user.id),
         Promise.allSettled([
           supabase.from("concern_card_views").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("first_viewed_at", weekAgo),
           supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", weekAgo),
@@ -92,6 +126,7 @@ export default function ProfileScreen() {
       setProfile({ ...(prof || {}), email: user.email });
       setNameDraft(prof?.display_name || "");
       setPostCount(postsRes.count || 0);
+      setAnswerCount(answersRes.count || 0);
 
       const [readR, watchR, voteR, replyR, stakeR] = weekStats;
       const cnt = (r: PromiseSettledResult<any>) => (r.status === "fulfilled" ? r.value.count || 0 : 0);
@@ -150,6 +185,33 @@ export default function ProfileScreen() {
     else { setPrefsStatus("saved"); setTimeout(() => setPrefsStatus((s) => (s === "saved" ? "" : s)), 1500); }
   }
 
+  function pushErrMsg(reason?: PushReason): string {
+    switch (reason) {
+      case "simulator":   return "Phone notifications need a real device — they can't be enabled on a simulator.";
+      case "denied":      return "Notifications are turned off for Townhall in your device settings. Enable them there, then try again.";
+      case "no_session":  return "Your session expired — sign in again and retry.";
+      case "network":     return "Couldn't reach the server. Check your connection and try again.";
+      default:            return "Something went wrong. Please try again.";
+    }
+  }
+
+  async function toggleDevicePush() {
+    if (pushBusy || !pushSupported) return;
+    setPushBusy(true);
+    if (!pushOn) {
+      const r = await enableDevicePush();
+      if (r.ok) setPushOn(true);
+      else Alert.alert("Couldn't enable phone notifications", pushErrMsg(r.reason));
+    } else {
+      const r = await disableDevicePush();
+      // A failed unsubscribe from a revoked-permission/token state still means
+      // "off" to the user — only surface a real network/server failure.
+      if (r.ok || r.reason === "denied" || r.reason === "token_error") setPushOn(false);
+      else Alert.alert("Couldn't turn off phone notifications", pushErrMsg(r.reason));
+    }
+    setPushBusy(false);
+  }
+
   async function saveName() {
     if (!nameDraft.trim() || saving) return;
     const nameErr = reservedNameError(nameDraft);
@@ -189,6 +251,11 @@ export default function ProfileScreen() {
   if (loading) {
     return <View style={[s.root, s.center]}><ActivityIndicator color={T.amber} /></View>;
   }
+
+  // Trust standing derived from trust_score (web parity).
+  const score = profile?.trust_score || 0;
+  const tier = currentTier(score);
+  const next = nextTier(score);
 
   return (
     <View style={s.root}>
@@ -239,6 +306,31 @@ export default function ProfileScreen() {
               </Pressable>
             )}
             {profile?.neighborhood ? <Text style={s.neighborhood}>{profile.neighborhood}</Text> : null}
+
+            {/* Standing badges — rendered only when the profile column is set
+                (web parity: is_expert / is_official / founding_number pills). */}
+            {(profile?.is_expert || profile?.is_official || profile?.founding_number) ? (
+              <View style={s.badgeRow}>
+                {profile?.is_expert ? (
+                  <Text style={[s.badge, { backgroundColor: T.purpleLo, borderColor: T.purpleMid, color: T.purpleHi }]}>
+                    ✓ {profile?.expert_credential || "Verified contributor"}
+                  </Text>
+                ) : null}
+                {profile?.is_official ? (
+                  <Text style={[s.badge, { backgroundColor: T.tealLo, borderColor: T.teal, color: T.tealHi }]}>
+                    ✓ Verified official
+                  </Text>
+                ) : null}
+                {profile?.founding_number ? (
+                  <Text style={[s.badge, { backgroundColor: T.amberLo, borderColor: T.amberMid, color: T.amberHi }]}>
+                    ★ Founding resident #{profile.founding_number}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {profile?.is_expert && profile?.expert_handle ? (
+              <Text style={s.expertHandle}>@{profile.expert_handle}</Text>
+            ) : null}
           </View>
 
           {/* This week */}
@@ -251,6 +343,30 @@ export default function ProfileScreen() {
               <Text style={s.weekNote}>Attention is a civic act, and we count it as one.</Text>
             </View>
           )}
+
+          {/* Trust level — the standing ladder (web parity: TIERS). */}
+          <View style={s.section}>
+            <Text style={s.sectionLabel}>Trust level</Text>
+            <Text style={s.tierScore}>
+              <Text style={{ color: tier.color, fontWeight: "700" }}>{tier.label}</Text> · {score.toLocaleString()} pts
+            </Text>
+            <Text style={s.tierNext}>
+              {next ? `${(next.pts - score).toLocaleString()} pts to ${next.label}` : "Top tier reached"}
+            </Text>
+            <View style={s.tierLadder}>
+              {TIERS.map((t) => {
+                const isCurrent = t.key === tier.key;
+                const locked = score < t.pts;
+                return (
+                  <View key={t.key} style={[s.tierRow, isCurrent && s.tierRowCurrent, locked && s.tierRowLocked]}>
+                    <View style={[s.tierDot, { backgroundColor: t.dot }]} />
+                    <Text style={[s.tierLabel, { color: t.color }]}>{t.label}</Text>
+                    <Text style={s.tierPts}>{t.pts === 0 ? "Start" : `${t.pts.toLocaleString()} pts`}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
 
           {/* Residency */}
           <View style={s.section}>
@@ -267,7 +383,10 @@ export default function ProfileScreen() {
           {/* Your civic standing */}
           <View style={s.section}>
             <Text style={s.sectionLabel}>Your civic standing</Text>
-            <Text style={s.standingLine}>{watchedCount ?? 0} council item{watchedCount === 1 ? "" : "s"} followed · {postCount} post{postCount === 1 ? "" : "s"}</Text>
+            <Text style={s.standingLine}>
+              {watchedCount ?? 0} council item{watchedCount === 1 ? "" : "s"} followed · {postCount} post{postCount === 1 ? "" : "s"}
+              {answerCount > 0 ? ` · ${answerCount} expert answer${answerCount === 1 ? "" : "s"}` : ""}
+            </Text>
             {lastRoundTrip ? (
               <View style={s.roundTrip}>
                 <Text style={s.roundTripLabel}>Most recent closed round trip</Text>
@@ -303,10 +422,29 @@ export default function ProfileScreen() {
               );
             })}
 
-            {/* Honest delivery note: alerts are in-app only for now — no phone
-                push or email is wired up yet. Say so plainly (mirrors web). */}
+            {/* Device push opt-in — registers this phone with Expo push and
+                subscribes via the web /api/push/subscribe endpoint. Real-device
+                only; disabled with a note on simulators. */}
+            <View style={s.prefRow}>
+              <Text style={s.prefLabel}>
+                Also send these to my phone{!pushSupported ? " (needs a physical device)" : ""}
+              </Text>
+              <Pressable
+                onPress={toggleDevicePush}
+                disabled={pushBusy || !pushSupported}
+                style={[s.toggle, { backgroundColor: pushOn ? T.teal : T.border, opacity: pushSupported ? 1 : 0.4 }]}>
+                <View style={[s.toggleKnob, { left: pushOn ? 20 : 3 }]} />
+              </Pressable>
+            </View>
+
+            {/* Honest delivery note: alerts always appear in-app; phone push is
+                real now and reflects the toggle above. */}
             <Text style={s.deliveryNote}>
-              These alerts appear here inside Townhall — on your 🔔 bell and in the list below. We don't send phone push notifications or emails yet, so check back in to see them. (Push delivery is planned for a later release.)
+              {!pushSupported
+                ? "These alerts appear here inside Townhall — on your 🔔 bell and in the list below. Phone notifications need a physical device."
+                : pushOn
+                ? "Phone notifications are on — civic alerts will also arrive on this device. They always appear here on your 🔔 bell too."
+                : "These alerts appear here inside Townhall — on your 🔔 bell and in the list below. Turn on phone notifications above to also get them on this device."}
             </Text>
 
             <View style={s.alertsDivider} />
@@ -368,6 +506,18 @@ const s = StyleSheet.create({
   displayName: { color: T.cream, fontSize: 20, fontWeight: "600" },
   editHint: { color: T.amberHi, fontSize: 14 },
   neighborhood: { color: T.creamDim, fontSize: 13, marginTop: 4 },
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6, marginTop: 10 },
+  badge: { fontSize: 11, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3, borderWidth: 1, overflow: "hidden" },
+  expertHandle: { color: T.purpleHi, fontSize: 11, marginTop: 6 },
+  tierScore: { color: T.cream, fontSize: 15, marginBottom: 2 },
+  tierNext: { color: T.creamDim, fontSize: 12, marginBottom: 12 },
+  tierLadder: { gap: 6 },
+  tierRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 9, borderWidth: 1, borderColor: "transparent" },
+  tierRowCurrent: { backgroundColor: T.amberLo, borderColor: T.amberMid },
+  tierRowLocked: { opacity: 0.35 },
+  tierDot: { width: 9, height: 9, borderRadius: 5 },
+  tierLabel: { fontSize: 13, fontWeight: "600", flex: 1 },
+  tierPts: { fontSize: 11, color: T.creamDim },
   nameInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: T.cream, fontSize: 16, textAlign: "center" },
   nameBtns: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 10 },
 
