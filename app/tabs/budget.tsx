@@ -367,9 +367,35 @@ export default function BudgetScreen() {
               <Text style={s.sectionLabel}>THE SCHOOLS' SLICE — {(sm.school_year || school.year)} DISTRICT BUDGET</Text>
               <Text style={s.blurb}>
                 {avgSchool ? <>The biggest piece: <Text style={s.blurbStrong}>{fmtUSD(avgSchool)}</Text> ({breakdownYear} tax) of your bill funds {sm.district || "the school district"}</> : (sm.district || "The school district")}
-                {" — a "}{fmtCompact(sTotal)} general fund{sm.per_pupil ? `, ${fmtUSD(sm.per_pupil)} per pupil` : ""}.
+                {" — a "}{fmtCompact(sTotal)} general fund.
                 The amber figure is each line's share of that {avgSchool ? fmtUSD(avgSchool) : "share"} (proportional estimate).
               </Text>
+              {(sm.per_pupil != null || sm.per_pupil_special_ed != null) && (
+                <>
+                  <View style={s.perPupilRow}>
+                    {sm.per_pupil != null && (
+                      <View style={s.perPupilCard}>
+                        <Text style={s.perPupilLabel}>Per student</Text>
+                        <Text style={s.perPupilValue}>{fmtUSD(sm.per_pupil)}</Text>
+                      </View>
+                    )}
+                    {sm.per_pupil_special_ed != null && (
+                      <View style={s.perPupilCard}>
+                        <Text style={s.perPupilLabel}>Special ed · per student (est.)</Text>
+                        <Text style={s.perPupilValue}>{fmtUSD(sm.per_pupil_special_ed)}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {sm.per_pupil_special_ed != null && (
+                    <Text style={s.perPupilNote}>
+                      Special ed figure is our estimate — in-district special education instruction spending
+                      divided by special-ed enrollment — not an official NJ DOE per-pupil statistic (the state's
+                      own Comparative Spending Guide doesn't publish one; it also excludes transportation from
+                      every per-pupil figure it reports, so we don't show a transportation number here either).
+                    </Text>
+                  )}
+                </>
+              )}
               <View style={s.card}>
                 {schoolLines.map((l: any) => (
                   <BarRow key={l.id} line={l} max={sMax} color="#3987E5"
@@ -499,6 +525,11 @@ const s = StyleSheet.create({
   legendPct: { color: T.creamFaint, fontSize: 11, width: 44, textAlign: "right", fontVariant: ["tabular-nums"] },
   blurb: { color: T.creamDim, fontSize: 13, lineHeight: 20 },
   blurbStrong: { color: T.cream, fontWeight: "600" },
+  perPupilRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
+  perPupilCard: { flexGrow: 1, minWidth: 140, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
+  perPupilLabel: { color: T.creamFaint, fontSize: 10, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 3 },
+  perPupilValue: { color: T.cream, fontSize: 15, fontWeight: "600" },
+  perPupilNote: { color: T.creamFaint, fontSize: 10.5, lineHeight: 15, marginTop: 8 },
   barRow: { paddingVertical: 7 },
   barLabels: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 4 },
   barLabel: { color: T.cream, fontSize: 12.5, flex: 1 },
