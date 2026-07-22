@@ -12,6 +12,7 @@ import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
 import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } from "../../lib/push";
+import { SITE_URL } from "../../lib/config";
 
 type WeekStats = { read: number; watched: number; voted: number; responded: number };
 
@@ -76,6 +77,8 @@ export default function ProfileScreen() {
   const [newRouteRoads, setNewRouteRoads] = useState<string[]>([]);
   const [routeSaving, setRouteSaving] = useState(false);
   const [routeError, setRouteError] = useState("");
+  const [routeLink, setRouteLink] = useState("");
+  const [routeLinkBusy, setRouteLinkBusy] = useState(false);
 
   // Device (phone) push opt-in. `pushSupported` is false on simulators/emulators
   // (Expo can't mint a token there); `pushOn` reflects OS permission on mount and
@@ -232,6 +235,30 @@ export default function ProfileScreen() {
     if (!name || newRouteRoads.includes(name)) return;
     setNewRouteRoads((r) => [...r, name]);
     setNewRoadInput("");
+  }
+
+  // Paste a Google Maps or Waze share link -> road names, via web's server
+  // route (keeps the Geoapify key + short-link redirect off the client).
+  async function parseRouteLink() {
+    const url = routeLink.trim();
+    if (!url || routeLinkBusy) return;
+    setRouteLinkBusy(true);
+    setRouteError("");
+    try {
+      const resp = await fetch(`${SITE_URL}/api/route-link-parse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setRouteError(data.error || "Couldn't read that link"); return; }
+      setNewRouteRoads((r) => [...new Set([...r, ...data.roads])]);
+      setRouteLink("");
+    } catch {
+      setRouteError("Couldn't reach the server — try again");
+    } finally {
+      setRouteLinkBusy(false);
+    }
   }
 
   async function saveRoute() {
@@ -583,6 +610,22 @@ export default function ProfileScreen() {
             <TextInput style={[s.nameInput, { textAlign: "left", marginTop: routes.length ? 14 : 0, marginBottom: 8 }]}
               value={newRouteName} onChangeText={setNewRouteName}
               placeholder="Route name (e.g. Commute to work)" placeholderTextColor={T.creamFaint} maxLength={60} />
+
+            {/* Paste a Google Maps / Waze share link — pulls road names out
+                of it instead of typing each one. Calls web's server route
+                (keeps the Geoapify key + short-link redirect off the phone). */}
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+              <TextInput style={[s.nameInput, { textAlign: "left", flex: 1 }]}
+                value={routeLink} onChangeText={setRouteLink}
+                onSubmitEditing={parseRouteLink}
+                autoCapitalize="none" autoCorrect={false}
+                placeholder="Paste a Google Maps or Waze link…" placeholderTextColor={T.creamFaint} maxLength={500} />
+              <Pressable onPress={parseRouteLink} disabled={!routeLink.trim() || routeLinkBusy} style={s.routeLinkBtn}>
+                <Text style={s.routeLinkBtnText}>{routeLinkBusy ? "Reading…" : "Add from link"}</Text>
+              </Pressable>
+            </View>
+            <Text style={s.routeOrDivider}>— or add a road by name —</Text>
+
             <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
               <TextInput style={[s.nameInput, { textAlign: "left", flex: 1 }]}
                 value={newRoadInput} onChangeText={setNewRoadInput}
@@ -686,6 +729,9 @@ const s = StyleSheet.create({
   routeChipText: { color: T.creamDim, fontSize: 11 },
   routeDelete: { color: T.creamFaint, fontSize: 15, padding: 4 },
   routeAddBtn: { paddingHorizontal: 14, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: T.border },
+  routeLinkBtn: { paddingHorizontal: 14, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: T.amberMid },
+  routeLinkBtnText: { color: T.amberHi, fontSize: 13 },
+  routeOrDivider: { color: T.creamFaint, fontSize: 10, textAlign: "center", marginBottom: 10 },
   routePendingChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3, marginBottom: 4 },
   routePendingChipText: { color: T.amberHi, fontSize: 11 },
   routeSaveBtn: { backgroundColor: T.amber, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
