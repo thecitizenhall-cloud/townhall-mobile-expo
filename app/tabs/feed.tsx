@@ -59,6 +59,30 @@ function milesBetween(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.asin(Math.sqrt(a));
 }
 
+// Mirrors web's TownScreen.jsx / civic-engine's _normalize_road exactly — the
+// server matches on road_name_normalized as stored, so this must produce the
+// same value for the same input.
+const ROUTE_ROAD_SUFFIXES = new Set([
+  "road", "rd", "street", "st", "avenue", "ave", "drive", "dr", "lane", "ln",
+  "boulevard", "blvd", "court", "ct", "way", "circle", "cir", "place", "pl",
+  "parkway", "pkwy", "terrace", "ter",
+]);
+function normalizeRoad(s: string): string {
+  let lowered = (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  lowered = lowered.replace(/\b(?:route|rt|highway|hwy)\.?\s+(\d+[a-z]?)\b/g, "rt$1");
+  const words = lowered.split(/\s+/).filter(Boolean);
+  const filtered = words.filter((w) => !ROUTE_ROAD_SUFFIXES.has(w));
+  return (filtered.length ? filtered : words).join(" ");
+}
+
+// Which (if any) of this resident's saved roads is mentioned in a civic item.
+function matchedRoadFor(item: CivicItem, myRoads: { road_name: string; road_name_normalized: string }[]): string | null {
+  if (!myRoads.length) return null;
+  const haystack = normalizeRoad([item.title, item.body].filter(Boolean).join(" "));
+  const hit = myRoads.find((r) => r.road_name_normalized && haystack.includes(r.road_name_normalized));
+  return hit ? hit.road_name : null;
+}
+
 export default function FeedScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [posts, setPosts] = useState<any[]>([]);
@@ -72,6 +96,7 @@ export default function FeedScreen() {
   const [verified, setVerified] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
+  const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
   const [filter, setFilter] = useState<"all" | "issue" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
@@ -141,6 +166,8 @@ export default function FeedScreen() {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       setProfile(p);
       setIsFirstSession(!p?.first_session_completed_at);
+      supabase.from("route_watch_roads").select("road_name, road_name_normalized")
+        .eq("user_id", user.id).then(({ data }) => setMyRoads(data || []));
 
       // Aggregated civic items from the shared web route (concern cards,
       // bulletins…). Wrapped so a failed fetch degrades to posts-only without
@@ -433,6 +460,13 @@ export default function FeedScreen() {
     streamItems = nonBotPosts.filter((p) => p.escalated).map((p) => ({ type: "post" as const, data: p }));
   } else if (filter === "near") {
     streamItems = nearbyCards.map((c) => ({ type: "civic" as const, data: c }));
+  }
+
+  if (myRoads.length) {
+    streamItems = streamItems.map((it) => it.type === "civic"
+      ? { ...it, data: { ...it.data, _onRoute: matchedRoadFor(it.data, myRoads) } }
+      : it
+    );
   }
 
   const hasEscalated = nonBotPosts.some((p) => p.escalated);

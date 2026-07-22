@@ -15,17 +15,19 @@ import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } f
 
 type WeekStats = { read: number; watched: number; voted: number; responded: number };
 
-// Exactly the three types the notification promise allows.
+// Exactly the types the notification promise allows.
 const NOTIF_TYPES: Record<string, { icon: string; label: string }> = {
   round_trip_closed: { icon: "✓", label: "Round trip closed — a response landed" },
   meeting_imminent: { icon: "!", label: "A meeting affecting your neighborhood is coming up" },
   watched_item_moved: { icon: "→", label: "Something you follow has moved" },
+  route_affected: { icon: "🚧", label: "Something affects a road on one of your routes" },
 };
 
 const PREF_ROWS = [
   { key: "round_trip_closed", label: "An official responds to an issue you raised or voted on" },
   { key: "meeting_imminent", label: "A council meeting affecting your neighborhood is within 48 hours" },
   { key: "watched_item_moved", label: "A civic issue you're following has been updated" },
+  { key: "route_affected", label: "Something affects a road on one of your routes" },
 ] as const;
 
 // Trust-tier ladder — mirrored verbatim from web (components/ProfileScreen.jsx
@@ -63,9 +65,17 @@ export default function ProfileScreen() {
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifsLoaded, setNotifsLoaded] = useState(false);
-  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({ round_trip_closed: true, meeting_imminent: true, watched_item_moved: true });
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({ round_trip_closed: true, meeting_imminent: true, watched_item_moved: true, route_affected: true });
   const [prefsStatus, setPrefsStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [muniId, setMuniId] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<{ id: string; name: string; roads: { id: string; road_name: string }[] }[]>([]);
+  const [newRouteName, setNewRouteName] = useState("");
+  const [newRoadInput, setNewRoadInput] = useState("");
+  const [newRouteRoads, setNewRouteRoads] = useState<string[]>([]);
+  const [routeSaving, setRouteSaving] = useState(false);
+  const [routeError, setRouteError] = useState("");
 
   // Device (phone) push opt-in. `pushSupported` is false on simulators/emulators
   // (Expo can't mint a token there); `pushOn` reflects OS permission on mount and
@@ -137,10 +147,13 @@ export default function ProfileScreen() {
       const roundTrips = roundTripsRes.data;
 
       // ── Phase 2: the two reads that depend on phase-1 results, in parallel ──
-      const [verified, userVotesRes] = await Promise.all([
+      const [verified, userVotesRes, hoodRes] = await Promise.all([
         hasResidencyProof(user.id, prof?.neighborhood_id ?? null),
         roundTrips?.length
           ? supabase.from("votes").select("issue_id").eq("user_id", user.id).in("issue_id", roundTrips.map((r) => r.id))
+          : Promise.resolve({ data: null }),
+        prof?.neighborhood_id
+          ? supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
 
@@ -150,6 +163,12 @@ export default function ProfileScreen() {
         const match = roundTrips.find((r: any) => votedIds.has(r.id));
         setLastRoundTrip(match ? { title: match.title, date: match.responded_at } : null);
       } else setLastRoundTrip(null);
+
+      // municipality_id for route_watches — derived from the slug, same
+      // approach as web (not a possibly-unset profiles column).
+      const prefix = hoodRes.data?.slug?.split("-")[0];
+      if (prefix) setMuniId(`${prefix}_nj`);
+      loadRoutes(user.id);
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
       console.error("Profile load error:", e);
@@ -183,6 +202,66 @@ export default function ProfileScreen() {
       .upsert({ user_id: user.id, ...newPrefs, updated_at: new Date().toISOString() });
     if (error) { setNotifPrefs(prev); setPrefsStatus("error"); }
     else { setPrefsStatus("saved"); setTimeout(() => setPrefsStatus((s) => (s === "saved" ? "" : s)), 1500); }
+  }
+
+  // Mirrors web's ProfileScreen.jsx / civic-engine/workers/notifier.py's
+  // _normalize_road exactly — the server matches on road_name_normalized as
+  // stored, so this must produce the same value for the same input.
+  const ROUTE_ROAD_SUFFIXES = new Set([
+    "road", "rd", "street", "st", "avenue", "ave", "drive", "dr", "lane", "ln",
+    "boulevard", "blvd", "court", "ct", "way", "circle", "cir", "place", "pl",
+    "parkway", "pkwy", "terrace", "ter",
+  ]);
+  function normalizeRoad(s: string): string {
+    let lowered = (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+    lowered = lowered.replace(/\b(?:route|rt|highway|hwy)\.?\s+(\d+[a-z]?)\b/g, "rt$1");
+    const words = lowered.split(/\s+/).filter(Boolean);
+    const filtered = words.filter((w) => !ROUTE_ROAD_SUFFIXES.has(w));
+    return (filtered.length ? filtered : words).join(" ");
+  }
+
+  async function loadRoutes(userId: string) {
+    const { data: rws } = await supabase.from("route_watches").select("id, name").eq("user_id", userId).order("created_at");
+    if (!rws?.length) { setRoutes([]); return; }
+    const { data: roads } = await supabase.from("route_watch_roads").select("id, route_id, road_name").in("route_id", rws.map((r) => r.id));
+    setRoutes(rws.map((r) => ({ ...r, roads: (roads || []).filter((rd: any) => rd.route_id === r.id) })));
+  }
+
+  function addPendingRoad() {
+    const name = newRoadInput.trim();
+    if (!name || newRouteRoads.includes(name)) return;
+    setNewRouteRoads((r) => [...r, name]);
+    setNewRoadInput("");
+  }
+
+  async function saveRoute() {
+    if (!newRouteName.trim() || newRouteRoads.length === 0 || !muniId || routeSaving) return;
+    setRouteSaving(true);
+    setRouteError("");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: route, error } = await supabase.from("route_watches")
+        .insert({ user_id: user.id, municipality_id: muniId, name: newRouteName.trim() })
+        .select("id, name").single();
+      if (error || !route) { setRouteError(error?.message || "Couldn't save route"); return; }
+      const { error: roadsErr } = await supabase.from("route_watch_roads").insert(
+        newRouteRoads.map((road_name) => ({
+          route_id: route.id, user_id: user.id,
+          road_name, road_name_normalized: normalizeRoad(road_name),
+        }))
+      );
+      if (roadsErr) { setRouteError(roadsErr.message); return; }
+      setRoutes((r) => [...r, { ...route, roads: newRouteRoads.map((road_name, i) => ({ id: `local-${i}`, road_name })) }]);
+      setNewRouteName(""); setNewRouteRoads([]); setNewRoadInput("");
+    } finally {
+      setRouteSaving(false);
+    }
+  }
+
+  async function deleteRoute(routeId: string) {
+    setRoutes((r) => r.filter((rt) => rt.id !== routeId));
+    await supabase.from("route_watches").delete().eq("id", routeId);
   }
 
   function pushErrMsg(reason?: PushReason): string {
@@ -471,6 +550,67 @@ export default function ProfileScreen() {
             )}
           </View>
 
+          {/* Routes — a named group of roads a resident wants alerted on. No
+              route geometry (no directions API, no PostGIS line data): matching
+              is text-based against a card's title/summary/affected_area, so
+              this means "mentions a road you use," not "falls on your literal
+              path." Mirrors web's ProfileScreen.jsx Routes section. */}
+          <View style={s.section}>
+            <Text style={s.sectionLabel}>Routes</Text>
+            <Text style={s.notifNote}>
+              Add the roads you regularly drive — a commute, a school run — and get alerted when something (roadwork, a closure, a council item) mentions one of them.
+            </Text>
+            <Text style={s.routeCaption}>
+              This matches by road name, not live traffic or an exact map — it can't tell if the roadwork is at your end of a long road or the other, and it may miss a road spelled differently than you typed it.
+            </Text>
+
+            {routes.map((route) => (
+              <View key={route.id} style={s.routeRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.routeName}>{route.name}</Text>
+                  <View style={s.routeChips}>
+                    {route.roads.map((rd) => (
+                      <View key={rd.id} style={s.routeChip}><Text style={s.routeChipText}>{rd.road_name}</Text></View>
+                    ))}
+                  </View>
+                </View>
+                <Pressable onPress={() => deleteRoute(route.id)} hitSlop={10}>
+                  <Text style={s.routeDelete}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
+
+            <TextInput style={[s.nameInput, { textAlign: "left", marginTop: routes.length ? 14 : 0, marginBottom: 8 }]}
+              value={newRouteName} onChangeText={setNewRouteName}
+              placeholder="Route name (e.g. Commute to work)" placeholderTextColor={T.creamFaint} maxLength={60} />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+              <TextInput style={[s.nameInput, { textAlign: "left", flex: 1 }]}
+                value={newRoadInput} onChangeText={setNewRoadInput}
+                onSubmitEditing={addPendingRoad}
+                placeholder="Road name (e.g. Cedar Swamp Road)" placeholderTextColor={T.creamFaint} maxLength={80} />
+              <Pressable onPress={addPendingRoad} disabled={!newRoadInput.trim()} style={s.routeAddBtn}>
+                <Text style={{ color: T.creamDim, fontSize: 13 }}>Add</Text>
+              </Pressable>
+            </View>
+            {newRouteRoads.length > 0 && (
+              <View style={s.routeChips}>
+                {newRouteRoads.map((name) => (
+                  <View key={name} style={s.routePendingChip}>
+                    <Text style={s.routePendingChipText}>{name}</Text>
+                    <Pressable onPress={() => setNewRouteRoads((r) => r.filter((n) => n !== name))} hitSlop={8}>
+                      <Text style={s.routePendingChipText}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            {routeError ? <Text style={{ color: T.redHi, fontSize: 11, marginTop: 8 }}>{routeError}</Text> : null}
+            <Pressable onPress={saveRoute} disabled={!newRouteName.trim() || newRouteRoads.length === 0 || routeSaving}
+              style={[s.routeSaveBtn, (!newRouteName.trim() || newRouteRoads.length === 0 || routeSaving) && { opacity: 0.5 }]}>
+              <Text style={s.routeSaveBtnText}>{routeSaving ? "Saving…" : "Save route"}</Text>
+            </Pressable>
+          </View>
+
           <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}><Text style={s.signOutText}>Sign out</Text></TouchableOpacity>
           <TouchableOpacity onPress={handleDeleteAccount}><Text style={s.deleteText}>Request account deletion</Text></TouchableOpacity>
         </ScrollView>
@@ -537,6 +677,19 @@ const s = StyleSheet.create({
   roundTripDate: { color: T.tealHi, fontSize: 12, marginTop: 4 },
   notifNote: { color: T.creamDim, fontSize: 13, lineHeight: 20 },
   alertsDivider: { height: 1, backgroundColor: T.border, marginTop: 18, marginBottom: 14 },
+
+  routeCaption: { color: T.creamFaint, fontSize: 11, lineHeight: 16, fontStyle: "italic", marginTop: 6 },
+  routeRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.border, marginTop: 12 },
+  routeName: { color: T.cream, fontSize: 14, fontWeight: "600", marginBottom: 5 },
+  routeChips: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
+  routeChip: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 },
+  routeChipText: { color: T.creamDim, fontSize: 11 },
+  routeDelete: { color: T.creamFaint, fontSize: 15, padding: 4 },
+  routeAddBtn: { paddingHorizontal: 14, justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: T.border },
+  routePendingChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3, marginBottom: 4 },
+  routePendingChipText: { color: T.amberHi, fontSize: 11 },
+  routeSaveBtn: { backgroundColor: T.amber, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  routeSaveBtnText: { color: T.bg, fontSize: 14, fontWeight: "700" },
   recentLabel: { color: T.creamFaint, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
 
   signOutBtn: { marginTop: 10, borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 14, alignItems: "center" },

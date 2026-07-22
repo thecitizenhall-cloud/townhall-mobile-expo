@@ -62,6 +62,7 @@ export type CivicItem = {
   _dist?: number;   // miles from the resident (opt-in "Near me" only)
   _inDistrict?: boolean;    // card is in the resident's election district (B4)
   _districtName?: string;
+  _onRoute?: string | null; // road name matched from the resident's saved routes
   tag: string;
   title: string;
   body: string;

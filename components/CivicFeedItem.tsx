@@ -60,6 +60,11 @@ export default function CivicFeedItem({ item, onPress }: Props) {
             · Your district
           </Text>
         )}
+        {item._onRoute && (
+          <Text style={[s.date, { color: T.amberHi, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4 }]}>
+            · 🚧 {item._onRoute}
+          </Text>
+        )}
         {item.address ? (
           <Text style={s.address} numberOfLines={1}>{item.address}</Text>
         ) : null}
