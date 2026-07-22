@@ -929,9 +929,6 @@ export default function IssueDetail() {
           )}
           <CommentKit
             currentUser={currentUser}
-            subjectTitle={issue.title}
-            subjectSummary={description || ""}
-            getToken={getToken}
             comments={ckComments}
             subIssues={subIssues}
             timeAgo={timeAgo}

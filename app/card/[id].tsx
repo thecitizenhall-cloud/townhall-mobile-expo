@@ -29,8 +29,6 @@ const IMPACT_LABELS: Record<string, string> = {
   housing: "🏘 Housing", education: "🎓 Education", safety: "🛡 Safety", infrastructure: "🔧 Infrastructure",
 };
 
-const getToken = async () => (await supabase.auth.getSession()).data.session?.access_token ?? null;
-
 function formatDate(d?: string | null) {
   if (!d) return "";
   const parts = String(d).split("T")[0].split("-");
@@ -370,9 +368,6 @@ export default function ConcernCardDetail() {
           </View>
           <CommentKit
             currentUser={user}
-            subjectTitle={card.title}
-            subjectSummary={card.summary || card.source_quote || ""}
-            getToken={getToken}
             comments={ckComments}
             subIssues={cardSubs}
             timeAgo={timeAgo}

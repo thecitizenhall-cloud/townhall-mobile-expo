@@ -3,18 +3,18 @@
 // so the two never drift. It combines the three ideas the product grew separately:
 //   • sub-issues   (named subsections; "Main discussion" + each sub-issue)
 //   • stance lanes (Support / Oppose / Neutral, shown within a subsection)
-//   • "say it in your own words" (one composer; the AI sorts your stance, you can
-//                                 override; falls back to manual chips if AI is off)
+//   • a plain comment composer with manual stance chips — the AI-assisted
+//     "say it in your own words" flow lives on the host screen's dedicated
+//     Weigh In card, not here, so the two don't say the same thing twice.
 //
 // Each host screen owns its data (different tables) and passes adapter callbacks.
 // CommentKit owns the look + the flow. The web grid collapses to a vertical
 // stack of cards on mobile, which is the native rendering here.
 import { useState } from "react";
 import {
-  View, Text, TextInput, Pressable, ActivityIndicator, StyleSheet,
+  View, Text, TextInput, Pressable, StyleSheet,
 } from "react-native";
 import { T } from "../lib/theme";
-import { SITE_URL } from "../lib/config";
 import ReportButton from "./ReportButton";
 
 export type Stance = "support" | "oppose" | "neutral";
@@ -126,48 +126,19 @@ function StanceLanes({ comments, subIssues, timeAgo, currentUser }: { comments: 
   );
 }
 
-// "Say it in your own words" → AI sorts the stance (overridable) → post.
+// Plain composer: free text + a manual stance pick → post.
 function StanceComposer({
-  currentUser, subjectTitle, subjectSummary, getToken, onPost, placeholder,
+  currentUser, onPost, placeholder,
 }: {
   currentUser: any;
-  subjectTitle?: string;
-  subjectSummary?: string;
-  getToken?: () => Promise<string | null | undefined>;
   onPost: (args: { body: string; stance: Stance }) => Promise<void>;
   placeholder?: string;
 }) {
   const [text, setText] = useState("");
   const [stance, setStance] = useState<Stance>("neutral");
-  const [stake, setStake] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false); // AI sorting
   const [posting, setPosting] = useState(false);
-  const [touched, setTouched] = useState(false); // user picked a chip manually
 
   if (!currentUser) return null;
-
-  async function aiSort() {
-    const body = text.trim();
-    if (body.length < 2) return;
-    setBusy(true);
-    try {
-      const token = getToken ? await getToken() : null;
-      const r = await fetch(`${SITE_URL}/api/issue/interpret`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ issueTitle: subjectTitle, issueSummary: subjectSummary, text: body }),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        setStance(normalizeStance(d.stance));
-        setStake(d.stake || null);
-        setTouched(true);
-      }
-    } catch {
-      /* leave manual */
-    }
-    setBusy(false);
-  }
 
   async function submit() {
     const body = text.trim();
@@ -177,8 +148,6 @@ function StanceComposer({
       await onPost({ body, stance });
       setText("");
       setStance("neutral");
-      setStake(null);
-      setTouched(false);
     } finally {
       setPosting(false);
     }
@@ -188,7 +157,7 @@ function StanceComposer({
     <View style={s.compose}>
       <TextInput
         style={s.input}
-        placeholder={placeholder || "Say it in your own words…"}
+        placeholder={placeholder || "Add a comment…"}
         placeholderTextColor={T.creamFaint}
         value={text}
         onChangeText={(v) => setText(v.slice(0, 1500))}
@@ -200,37 +169,27 @@ function StanceComposer({
           return (
             <Pressable
               key={st.key}
-              onPress={() => { setStance(st.key); setTouched(true); }}
+              onPress={() => setStance(st.key)}
               style={[s.chip, { borderColor: on ? st.color : T.border, backgroundColor: on ? st.bg : "transparent" }]}
             >
               <Text style={[s.chipText, { color: on ? st.color : T.creamDim }]}>{st.short || st.label}</Text>
             </Pressable>
           );
         })}
-        <Pressable onPress={aiSort} disabled={busy || text.trim().length < 2} style={s.aiBtn}>
-          <Text style={s.aiBtnText}>{busy ? "…" : "✨ Let AI sort"}</Text>
-        </Pressable>
         <Pressable onPress={submit} disabled={!text.trim() || posting} style={[s.postBtn, (!text.trim() || posting) && s.disabled]}>
           <Text style={s.postBtnText}>{posting ? "Posting…" : "Post"}</Text>
         </Pressable>
       </View>
-      {stake ? <Text style={s.stake}>▸ What's at stake: {stake}</Text> : null}
-      {!touched ? (
-        <Text style={s.hint}>Write naturally — tap "Let AI sort" to place your stance, or pick one yourself.</Text>
-      ) : null}
     </View>
   );
 }
 
 // The whole board: Main discussion + a card per sub-issue + a "propose" card.
 export default function CommentKit({
-  currentUser, subjectTitle, subjectSummary, getToken,
+  currentUser,
   comments, subIssues, timeAgo, onPost, onCreateSubIssue,
 }: {
   currentUser: any;
-  subjectTitle?: string;
-  subjectSummary?: string;
-  getToken?: () => Promise<string | null | undefined>;
   comments: KitComment[];
   subIssues: SubIssue[];
   timeAgo?: (d?: string | null) => string;
@@ -258,9 +217,6 @@ export default function CommentKit({
   const composer = (subId: string | null) => (
     <StanceComposer
       currentUser={currentUser}
-      subjectTitle={subjectTitle}
-      subjectSummary={subjectSummary}
-      getToken={getToken}
       onPost={({ body, stance }) => onPost({ body, stance, subId })}
     />
   );
@@ -374,13 +330,9 @@ const s = StyleSheet.create({
   tools: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" },
   chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, borderWidth: 1 },
   chipText: { fontSize: 11.5, fontWeight: "500" },
-  aiBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, borderWidth: 1, borderColor: T.border },
-  aiBtnText: { color: T.amberHi, fontSize: 11.5 },
   postBtn: { marginLeft: "auto", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, backgroundColor: T.amber },
   postBtnText: { color: T.bg, fontSize: 12.5, fontWeight: "600" },
   disabled: { opacity: 0.4 },
-  hint: { fontSize: 11, color: T.creamFaint, marginTop: 6 },
-  stake: { fontSize: 11.5, color: T.amberHi, marginTop: 6 },
   addRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 8 },
   cancelBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: T.border },
   cancelBtnText: { color: T.creamDim, fontSize: 12 },
