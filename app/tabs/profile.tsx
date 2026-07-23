@@ -24,11 +24,13 @@ const NOTIF_TYPES: Record<string, { icon: string; label: string }> = {
   route_affected: { icon: "🚧", label: "Something affects a road on one of your routes" },
 };
 
+// route_affected is deliberately NOT here — it lives as its own toggle inside
+// the Routes section (mirrors web), not the generic Alerts list, since it
+// only controls that one separate feature.
 const PREF_ROWS = [
   { key: "round_trip_closed", label: "An official responds to an issue you raised or voted on" },
   { key: "meeting_imminent", label: "A council meeting affecting your neighborhood is within 48 hours" },
   { key: "watched_item_moved", label: "A civic issue you're following has been updated" },
-  { key: "route_affected", label: "Something affects a road on one of your routes" },
 ] as const;
 
 // Trust-tier ladder — mirrored verbatim from web (components/ProfileScreen.jsx
@@ -79,6 +81,7 @@ export default function ProfileScreen() {
   const [routeError, setRouteError] = useState("");
   const [routeLink, setRouteLink] = useState("");
   const [routeLinkBusy, setRouteLinkBusy] = useState(false);
+  const [routeToggleStatus, setRouteToggleStatus] = useState<"" | "saving" | "saved" | "error">("");
 
   // Device (phone) push opt-in. `pushSupported` is false on simulators/emulators
   // (Expo can't mint a token there); `pushOn` reflects OS permission on mount and
@@ -194,17 +197,25 @@ export default function ProfileScreen() {
     setUnreadCount(0);
   }
 
-  async function saveNotifPrefs(key: string, val: boolean) {
+  // setLocalStatus is optional — toggles that live outside the Alerts list
+  // (Routes' own toggle) pass their own setter so feedback shows next to
+  // what was actually touched, not just in the Alerts card.
+  async function saveNotifPrefs(key: string, val: boolean, setLocalStatus?: (s: any) => void) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const prev = notifPrefs;
     const newPrefs = { ...notifPrefs, [key]: val };
     setNotifPrefs(newPrefs);
-    setPrefsStatus("saving");
+    setPrefsStatus("saving"); setLocalStatus?.("saving");
     const { error } = await supabase.from("notification_preferences")
       .upsert({ user_id: user.id, ...newPrefs, updated_at: new Date().toISOString() });
-    if (error) { setNotifPrefs(prev); setPrefsStatus("error"); }
-    else { setPrefsStatus("saved"); setTimeout(() => setPrefsStatus((s) => (s === "saved" ? "" : s)), 1500); }
+    if (error) {
+      setNotifPrefs(prev); setPrefsStatus("error"); setLocalStatus?.("error");
+    } else {
+      setPrefsStatus("saved"); setLocalStatus?.("saved");
+      setTimeout(() => setPrefsStatus((s) => (s === "saved" ? "" : s)), 1500);
+      setTimeout(() => setLocalStatus?.((s: any) => (s === "saved" ? "" : s)), 1500);
+    }
   }
 
   // Mirrors web's ProfileScreen.jsx / civic-engine/workers/notifier.py's
@@ -590,6 +601,22 @@ export default function ProfileScreen() {
             <Text style={s.routeCaption}>
               This matches by road name, not live traffic or an exact map — it can't tell if the roadwork is at your end of a long road or the other, and it may miss a road spelled differently than you typed it.
             </Text>
+
+            {/* Lives here, not in the generic Alerts list above — this
+                toggle only controls Routes, same reasoning as web. */}
+            <View style={[s.prefRow, { marginTop: 4, marginBottom: 16, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }]}>
+              <Text style={s.prefLabel}>Alert me when something affects one of my routes</Text>
+              <Pressable
+                onPress={() => saveNotifPrefs("route_affected", !notifPrefs.route_affected, setRouteToggleStatus)}
+                style={[s.toggle, { backgroundColor: notifPrefs.route_affected ? T.teal : T.border }]}>
+                <View style={[s.toggleKnob, { left: notifPrefs.route_affected ? 20 : 3 }]} />
+              </Pressable>
+            </View>
+            {routeToggleStatus ? (
+              <Text style={[s.prefsStatus, { marginTop: -12 }, routeToggleStatus === "error" && { color: T.redHi }]}>
+                {routeToggleStatus === "saving" ? "Saving…" : routeToggleStatus === "saved" ? "Saved ✓" : "Couldn't save — check your connection."}
+              </Text>
+            ) : null}
 
             {routes.map((route) => (
               <View key={route.id} style={s.routeRow}>
