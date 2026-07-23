@@ -75,11 +75,22 @@ function normalizeRoad(s: string): string {
   return (filtered.length ? filtered : words).join(" ");
 }
 
+// Word-boundary match, not plain substring — found live against real prod
+// data: a short normalized road like "14 th" (from "14 th Street")
+// plain-substring-matched inside "...Lot 14 the Township..." (the "14" from
+// an unrelated lot number, immediately followed by the word "the"). Mirrors
+// civic-engine's _road_in_text.
+function roadInText(normalizedRoad: string, haystack: string): boolean {
+  if (!normalizedRoad) return false;
+  const escaped = normalizedRoad.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`).test(haystack);
+}
+
 // Which (if any) of this resident's saved roads is mentioned in a civic item.
 function matchedRoadFor(item: CivicItem, myRoads: { road_name: string; road_name_normalized: string }[]): string | null {
   if (!myRoads.length) return null;
   const haystack = normalizeRoad([item.title, item.body].filter(Boolean).join(" "));
-  const hit = myRoads.find((r) => r.road_name_normalized && haystack.includes(r.road_name_normalized));
+  const hit = myRoads.find((r) => roadInText(r.road_name_normalized, haystack));
   return hit ? hit.road_name : null;
 }
 
