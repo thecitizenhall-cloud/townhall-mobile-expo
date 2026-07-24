@@ -519,6 +519,7 @@ export default function FeedScreen() {
   const hasEscalated = nonBotPosts.some((p) => p.escalated);
   const filterTabs = [
     { key: "all", label: "All", show: true },
+    { key: "map", label: "🗺 Map", show: true },
     { key: "issue", label: "Council", show: concernCards.length > 0 },
     { key: "near", label: "📍 Near me", show: true },
     { key: "escalated", label: "Escalated", show: hasEscalated },
@@ -683,7 +684,16 @@ export default function FeedScreen() {
             {filterTabs.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
                 {filterTabs.map((t) => (
-                  <Pressable key={t.key} onPress={() => t.key === "budget" ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */) : t.key === "near" ? enableNearMe() : setFilter(t.key as any)} style={[s.filterPill, filter === t.key && s.filterPillActive]}>
+                  <Pressable key={t.key} onPress={() => t.key === "map"
+                    ? router.push({ pathname: "/map" as any, params: { muni: townId } })
+                    : t.key === "budget"
+                      ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */)
+                      : t.key === "near"
+                        ? enableNearMe()
+                        : setFilter(t.key as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.key === "map" ? `Open ${neighborhood} civic map` : undefined}
+                    style={[s.filterPill, filter === t.key && s.filterPillActive]}>
                     <Text style={[s.filterPillText, filter === t.key && s.filterPillTextActive]}>{t.label}</Text>
                   </Pressable>
                 ))}

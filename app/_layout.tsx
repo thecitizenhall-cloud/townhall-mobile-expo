@@ -46,6 +46,10 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="tabs" options={{ headerShown: false }} />
         <Stack.Screen
+          name="map"
+          options={{ title: "Civic map" }}
+        />
+        <Stack.Screen
           name="card/[id]"
           options={{ title: "Concern", presentation: "card" }}
         />
