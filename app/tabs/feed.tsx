@@ -128,6 +128,10 @@ export default function FeedScreen() {
   const [reportDesc, setReportDesc] = useState("");
   const [reportLoc, setReportLoc] = useState("");
   const [reportCoords, setReportCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportCoordSource, setReportCoordSource] = useState<"gps" | "geocode" | "pin" | null>(null);
+  const [geocodingReport, setGeocodingReport] = useState(false);
+  const reportMapRef = useRef<WebView>(null);
+  const [reportMapReady, setReportMapReady] = useState(false);
   const [locating, setLocating] = useState(false);
   const [reporting, setReporting] = useState(false);
 
@@ -377,6 +381,7 @@ export default function FeedScreen() {
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const { latitude: lat, longitude: lng } = pos.coords;
       setReportCoords({ lat, lng });
+      setReportCoordSource("gps");
       if (!reportLoc.trim()) {
         try {
           const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
@@ -389,6 +394,36 @@ export default function FeedScreen() {
     } catch { showToast("Could not get your location"); }
     setLocating(false);
   }
+
+  async function handleReportLocationBlur() {
+    const text = reportLoc.trim();
+    if (text.length < 3 || geocodingReport ||
+        reportCoordSource === "gps" || reportCoordSource === "pin") return;
+    setGeocodingReport(true);
+    try {
+      const municipality = profile?.neighborhood || profile?.municipality_id || "";
+      const params = new URLSearchParams({ text, municipality });
+      const r = await fetch(`${SITE_URL}/api/report/geocode?${params}`);
+      const d = await r.json();
+      if (r.ok && Number.isFinite(d.lat) && Number.isFinite(d.lng)) {
+        setReportCoords({ lat: d.lat, lng: d.lng });
+        setReportCoordSource("geocode");
+      } else if (r.status === 404) {
+        showToast("Could not find that location — try an address or cross-streets");
+      }
+    } catch { /* keep the typed label when geocoding is unavailable */ }
+    setGeocodingReport(false);
+  }
+
+  useEffect(() => {
+    if (!reportMapReady || !reportCoords) return;
+    reportMapRef.current?.injectJavaScript(`
+      window.dispatchEvent(new CustomEvent("townhall:set-map-pin", {
+        detail: { lat: ${reportCoords.lat}, lng: ${reportCoords.lng} }
+      }));
+      true;
+    `);
+  }, [reportMapReady, reportCoords?.lat, reportCoords?.lng]);
 
   async function handleReport() {
     if (!reportDesc.trim() || reporting) return;
@@ -414,7 +449,8 @@ export default function FeedScreen() {
     if (error) {
       showToast(error.message.includes("Rate limit") ? "Max 5 reports per hour" : "Failed to submit — " + error.message);
     } else {
-      setReportDesc(""); setReportLoc(""); setReportType("pothole"); setReportCoords(null); setReportOpen(false);
+      setReportDesc(""); setReportLoc(""); setReportType("pothole"); setReportCoords(null);
+      setReportCoordSource(null); setReportOpen(false);
       showToast("Report submitted — it will appear in the feed shortly");
     }
     setReporting(false);
@@ -728,7 +764,15 @@ export default function FeedScreen() {
             </View>
             <View style={s.locRow}>
               <TextInput style={[s.composeInput, { flex: 1, minHeight: 40 }]} placeholder="Street address or cross-streets (e.g. Oak St near Pine Ave)"
-                placeholderTextColor={T.creamFaint} value={reportLoc} onChangeText={setReportLoc} />
+                placeholderTextColor={T.creamFaint} value={reportLoc}
+                onChangeText={(text) => {
+                  setReportLoc(text.slice(0, 200));
+                  if (reportCoordSource === "geocode") {
+                    setReportCoords(null);
+                    setReportCoordSource(null);
+                  }
+                }}
+                onEndEditing={handleReportLocationBlur} />
             </View>
             <Pressable onPress={handleUseMyLocation} disabled={locating} style={s.locBtn}>
               <Text style={s.locBtnText}>{locating ? "Locating…" : reportCoords ? "📍 Location attached" : "📍 Use my location"}</Text>
@@ -738,21 +782,27 @@ export default function FeedScreen() {
                 already set. */}
             <View style={s.mapWrap}>
               <WebView
-                source={{ uri: `${SITE_URL}/map-picker${reportCoords ? `?lat=${reportCoords.lat}&lng=${reportCoords.lng}` : ""}` }}
+                ref={reportMapRef}
+                source={{ uri: `${SITE_URL}/map-picker?native=1` }}
                 style={s.map}
                 onMessage={(e) => {
                   try {
                     const m = JSON.parse(e.nativeEvent.data);
-                    if (m?.type === "pin" && typeof m.lat === "number") setReportCoords({ lat: m.lat, lng: m.lng });
+                    if (m?.type === "ready") setReportMapReady(true);
+                    if (m?.type === "pin" && typeof m.lat === "number" && typeof m.lng === "number") {
+                      setReportCoords({ lat: m.lat, lng: m.lng });
+                      setReportCoordSource("pin");
+                    }
                   } catch {}
                 }}
               />
             </View>
+            {geocodingReport ? <Text style={s.mapHint}>Finding that location…</Text> : null}
             <Text style={s.mapHint}>Drag the pin to the exact spot — the location is published with your report.</Text>
             <TextInput style={[s.composeInput, { minHeight: 70, marginTop: 8 }]} multiline placeholder="Describe the issue briefly"
               placeholderTextColor={T.creamFaint} value={reportDesc} onChangeText={setReportDesc} />
             <View style={s.composeBtns}>
-              <Pressable onPress={() => { setReportOpen(false); setReportDesc(""); setReportLoc(""); setReportCoords(null); }} style={s.ghostBtn}>
+              <Pressable onPress={() => { setReportOpen(false); setReportDesc(""); setReportLoc(""); setReportCoords(null); setReportCoordSource(null); }} style={s.ghostBtn}>
                 <Text style={s.ghostBtnText}>Cancel</Text>
               </Pressable>
               <Pressable onPress={handleReport} disabled={!reportDesc.trim() || reporting} style={[s.postBtn, (!reportDesc.trim() || reporting) && s.disabled]}>
