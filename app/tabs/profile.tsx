@@ -256,9 +256,17 @@ export default function ProfileScreen() {
     setRouteLinkBusy(true);
     setRouteError("");
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setRouteError("Sign in to import a route");
+        return;
+      }
       const resp = await fetch(`${SITE_URL}/api/route-link-parse`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ url }),
       });
       const data = await resp.json();
