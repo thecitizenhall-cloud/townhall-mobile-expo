@@ -12,9 +12,9 @@ export default function OnboardingLayout() {
         animation: "slide_from_right",
       }}
     >
-      <Stack.Screen name="account" options={{ title: "Step 1 of 4", headerLeft: () => null }} />
-      <Stack.Screen name="neighborhood" options={{ title: "Step 2 of 4" }} />
-      <Stack.Screen name="zk-proof" options={{ title: "Step 3 of 4" }} />
+      <Stack.Screen name="account" options={{ title: "Step 1 of 3", headerLeft: () => null }} />
+      <Stack.Screen name="neighborhood" options={{ title: "Step 2 of 3" }} />
+      <Stack.Screen name="zk-proof" options={{ title: "Verify residency" }} />
       <Stack.Screen name="welcome" options={{ headerShown: false }} />
     </Stack>
   );
