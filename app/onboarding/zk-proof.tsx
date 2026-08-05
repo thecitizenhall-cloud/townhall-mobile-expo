@@ -17,6 +17,23 @@ const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL ?? "https://www.townhallcafe.o
 // Next.js /api/zk-verify route, so SITE_URL must NOT be used for verify.
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
 
+// CQ-MOB-3: first-five-minutes auto-follow, mirrors web's
+// VerifyResidencyModal.jsx seedWatchers() — /api/seed-watchers keys
+// neighborhood_scores by SLUG, so resolve the uuid first. Fire-and-forget: a
+// failure here must never block onboarding.
+async function seedWatchers(neighborhoodId: string, accessToken: string | undefined, userId: string) {
+  try {
+    const { data: hood } = await supabase.from("neighborhoods")
+      .select("slug").eq("id", neighborhoodId).maybeSingle();
+    if (!hood?.slug || !accessToken) return;
+    fetch(`${SITE_URL}/api/seed-watchers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ user_id: userId, neighborhood_id: hood.slug }),
+    }).catch(() => {});
+  } catch { /* non-blocking */ }
+}
+
 export default function OnboardingZKProof() {
   const params = useLocalSearchParams<{
     neighborhoodId: string;
@@ -86,6 +103,7 @@ export default function OnboardingZKProof() {
         setStatus("done");
         setStatusMsg("Residency verified!");
         await recordAttestation(params.neighborhoodName);
+        seedWatchers(params.neighborhoodId, session?.access_token, user.id); // deliberately not awaited
         router.replace("/onboarding/welcome");
         return;
       }

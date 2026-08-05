@@ -248,7 +248,10 @@ export default function ConcernCardDetail() {
   async function postCardComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }) {
     if (!user || !body.trim()) return;
     const { data, error } = await supabase.from("card_events").insert({
-      concern_card_id: id, neighborhood_id: card?.municipality_id || "unknown",
+      // CQ-MOBILE-CARD-EVENTS: neighborhood_id must be the resident's neighborhood
+      // slug (e.g. "jackson-general"), not the engine's municipality_id (e.g.
+      // "jackson_nj") — matches web's ConcernCardDetailScreen fix (N-1).
+      concern_card_id: id, neighborhood_id: (await getResidentNeighborhoodSlug(user.id)) || "unknown",
       event_type: "comment", user_id: user.id, body: body.trim(), stance, sub_issue_id: subId || null,
     }).select("*").single();  // no profiles embed — card_events has no FK to profiles (400s)
     if (error) return;

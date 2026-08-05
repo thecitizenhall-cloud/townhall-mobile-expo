@@ -40,7 +40,8 @@
     "typescript": "~6.0.3"
   },
   "overrides": {
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "brace-expansion": ">=5.0.9"
   },
   "private": true
 }

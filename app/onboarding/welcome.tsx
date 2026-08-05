@@ -23,13 +23,24 @@ export default function OnboardingWelcome() {
       setProfile(p);
 
       if (p?.neighborhood_id) {
-        const { data: scores } = await supabase
-          .from("neighborhood_scores")
-          .select("concern_card_id, relevance_score")
-          .eq("neighborhood_id", p.neighborhood_id)
-          .gte("relevance_score", 0.65)
-          .order("relevance_score", { ascending: false })
-          .limit(3);
+        // CQ-MOB-1: neighborhood_scores.neighborhood_id is a text slug
+        // ("jackson-general"), not the profiles uuid — resolve it first,
+        // matching feed.tsx's hoodSlug pattern.
+        const { data: hood } = await supabase
+          .from("neighborhoods")
+          .select("slug")
+          .eq("id", p.neighborhood_id)
+          .maybeSingle();
+
+        const { data: scores } = hood?.slug
+          ? await supabase
+              .from("neighborhood_scores")
+              .select("concern_card_id, relevance_score")
+              .eq("neighborhood_id", hood.slug)
+              .gte("relevance_score", 0.65)
+              .order("relevance_score", { ascending: false })
+              .limit(3)
+          : { data: null };
 
         if (scores?.length) {
           const ids = scores.map(s => s.concern_card_id);
