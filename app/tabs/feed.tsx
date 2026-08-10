@@ -323,6 +323,7 @@ export default function FeedScreen() {
 
   async function handlePost() {
     if (!draft.trim() || posting) return;
+    if (!currentUser || !verified) { goVerify(); return; }   // MOB-POST-GATE: no crash for anon
     setPosting(true);
     const { error } = await supabase.from("posts").insert({
       author_id: currentUser.id, neighborhood_id: profile?.neighborhood_id || null,
