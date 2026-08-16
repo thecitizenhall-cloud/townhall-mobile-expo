@@ -1,0 +1,102 @@
+name: Nightly maintenance
+
+# Runs type-check + dependency audit; if either fails, asks Claude Code to
+# prepare a minimal fix on a new branch and open it as a DRAFT PR for human
+# review. Never merges, never touches lib/residency.ts or ZK screens, never
+# gets Supabase credentials — see
+# .github/claude/nightly-maintenance-instructions.md for exact scope.
+# Starts on workflow_dispatch only; uncomment the schedule once you've
+# watched it run clean a few times (same discipline as the web repo's
+# nightly-maintenance.yml).
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: '23 9 * * *'   # ~5:23am Eastern; uncomment once verified
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nightly-maintenance
+  cancel-in-progress: false
+
+jobs:
+  check-and-fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run checks, collect findings
+        id: checks
+        run: |
+          FINDINGS=maintenance-findings.txt
+          : > "$FINDINGS"
+          FAILED=0
+
+          echo "## npm install" >> "$FINDINGS"
+          if ! npm install >> "$FINDINGS" 2>&1; then
+            echo "npm install FAILED" >> "$FINDINGS"; FAILED=1
+          fi
+
+          echo "## tsc --noEmit" >> "$FINDINGS"
+          if ! npx tsc --noEmit >> "$FINDINGS" 2>&1; then
+            echo "type check FAILED" >> "$FINDINGS"; FAILED=1
+          fi
+
+          echo "## npm audit (production deps)" >> "$FINDINGS"
+          if ! npm audit --omit=dev >> "$FINDINGS" 2>&1; then
+            echo "npm audit reported vulnerabilities" >> "$FINDINGS"; FAILED=1
+          fi
+
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+          echo "----- findings -----"
+          cat "$FINDINGS"
+
+      - name: Ask Claude Code to prepare a fix
+        if: steps.checks.outputs.failed == '1'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+
+          BRANCH="bot/nightly-maintenance-$(date -u +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git config user.name "townhall-nightly-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          cat .github/claude/nightly-maintenance-instructions.md maintenance-findings.txt | \
+            claude -p \
+              --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
+              --output-format text \
+              "Read the scope instructions and the findings above (piped via stdin) and prepare a fix per the instructions. Stop and do nothing if nothing in scope is safely fixable."
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "Nightly maintenance: automated fix
+
+Generated from a failed nightly check. See PR body for details.
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+            git push origin "$BRANCH"
+            gh pr create --draft \
+              --title "Nightly maintenance: $(date -u +%Y-%m-%d)" \
+              --body "Automated draft from the nightly-maintenance workflow. Review before merging — see .github/claude/nightly-maintenance-instructions.md for what this bot is and isn't allowed to touch." \
+              --base main --head "$BRANCH"
+          else
+            echo "Claude made no changes — nothing safely fixable in scope. See findings artifact."
+          fi
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-findings
+          path: maintenance-findings.txt
+          retention-days: 14
