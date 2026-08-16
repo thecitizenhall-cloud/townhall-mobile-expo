@@ -35,7 +35,8 @@ jobs:
       - name: Run checks, collect findings
         id: checks
         run: |
-          FINDINGS=maintenance-findings.txt
+          FINDINGS="$RUNNER_TEMP/maintenance-findings.txt"
+          echo "findings_path=$FINDINGS" >> "$GITHUB_OUTPUT"
           : > "$FINDINGS"
           FAILED=0
 
@@ -71,7 +72,13 @@ jobs:
           git config user.name "townhall-nightly-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          cat .github/claude/nightly-maintenance-instructions.md maintenance-findings.txt | \
+          # Reset any incidental working-tree noise from the checks step's own
+          # npm install (e.g. package-lock.json touch-ups) so only changes
+          # Claude actually makes below count toward "did it fix something".
+          git checkout -- .
+          git clean -fd -- . ':!node_modules'
+
+          cat .github/claude/nightly-maintenance-instructions.md "${{ steps.checks.outputs.findings_path }}" | \
             claude -p \
               --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
               --output-format text \
@@ -97,5 +104,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maintenance-findings
-          path: maintenance-findings.txt
+          path: ${{ steps.checks.outputs.findings_path }}
           retention-days: 14
