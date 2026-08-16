@@ -10,8 +10,8 @@ name: Nightly maintenance
 # nightly-maintenance.yml).
 on:
   workflow_dispatch: {}
-  # schedule:
-  #   - cron: '23 9 * * *'   # ~5:23am Eastern; uncomment once verified
+  schedule:
+    - cron: '23 9 * * *'   # ~5:23am Eastern
 
 permissions:
   contents: write
