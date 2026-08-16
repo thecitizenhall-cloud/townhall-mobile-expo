@@ -78,11 +78,13 @@ jobs:
           git checkout -- .
           git clean -fd -- . ':!node_modules'
 
+          REPORT="$RUNNER_TEMP/claude-report.txt"
           cat .github/claude/nightly-maintenance-instructions.md "${{ steps.checks.outputs.findings_path }}" | \
             claude -p \
               --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
               --output-format text \
-              "Read the scope instructions and the findings above (piped via stdin) and prepare a fix per the instructions. Stop and do nothing if nothing in scope is safely fixable."
+              "Read the scope instructions and the findings above (piped via stdin) and prepare a fix per the instructions. Stop and do nothing if nothing in scope is safely fixable. End your reply with the PR body in the exact ## Found / ## Changed / ## Verification / ## Could not safely fix format from the instructions — that's what gets posted as the PR body verbatim." \
+            | tee "$REPORT"
 
           if [ -n "$(git status --porcelain)" ]; then
             git add -A
@@ -93,7 +95,7 @@ jobs:
             git push origin "$BRANCH"
             gh pr create --draft \
               --title "Nightly maintenance: $(date -u +%Y-%m-%d)" \
-              --body "Automated draft from the nightly-maintenance workflow. Review before merging — see .github/claude/nightly-maintenance-instructions.md for what this bot is and isn't allowed to touch." \
+              --body-file "$REPORT" \
               --base main --head "$BRANCH"
           else
             echo "Claude made no changes — nothing safely fixable in scope. See findings artifact."
