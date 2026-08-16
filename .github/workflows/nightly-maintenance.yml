@@ -79,11 +79,10 @@ jobs:
 
           if [ -n "$(git status --porcelain)" ]; then
             git add -A
-            git commit -m "Nightly maintenance: automated fix
-
-Generated from a failed nightly check. See PR body for details.
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+            git commit \
+              -m "Nightly maintenance: automated fix" \
+              -m "Generated from a failed nightly check. See PR body for details." \
+              -m "Co-Authored-By: Claude <noreply@anthropic.com>"
             git push origin "$BRANCH"
             gh pr create --draft \
               --title "Nightly maintenance: $(date -u +%Y-%m-%d)" \
