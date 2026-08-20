@@ -363,79 +363,6 @@ export default function ConcernCardDetail() {
         </Pressable>
         {!user ? <Text style={s.signInNote}>Sign in to follow and receive updates</Text> : null}
 
-        {/* Comments */}
-        <View style={s.window}>
-          <View style={s.windowHead}>
-            <Text style={s.windowHeadText}>💬 Comments</Text>
-            <Text style={s.windowCount}>{ckComments.length}</Text>
-          </View>
-          <CommentKit
-            currentUser={user}
-            comments={ckComments}
-            subIssues={cardSubs}
-            timeAgo={timeAgo}
-            onPost={postCardComment}
-            onCreateSubIssue={createCardSubIssue}
-          />
-        </View>
-
-        {/* Official reply */}
-        <View style={s.window}>
-          <View style={s.windowHead}><Text style={s.windowHeadText}>✅ Official reply</Text></View>
-          {hasOfficial ? (
-            <View>
-              {card?.official_response ? (
-                <View style={s.post}>
-                  <Text style={s.postBody}>{card.official_response}</Text>
-                  <Text style={s.postMeta}>
-                    {card.official_response_name || "Official"}
-                    {card.official_response_verified && card.official_response_email
-                      ? ` · via ${String(card.official_response_email).split("@")[1]} · verified by email, not identity` : ""}
-                  </Text>
-                </View>
-              ) : null}
-              {reportInfo?.official_response ? (
-                <View style={s.govInbox}>
-                  <Text style={s.govInboxLabel}>Verified government inbox</Text>
-                  <Text style={s.govInboxBody}>{reportInfo.official_response}</Text>
-                  <Text style={s.govInboxMeta}>
-                    {reportInfo.official_response_name ? `${reportInfo.official_response_name} · ` : ""}{reportInfo.official_response_email}
-                    {reportInfo.responded_at ? ` · ${new Date(reportInfo.responded_at).toLocaleDateString()}` : ""}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={s.windowEmpty}>
-              No official response yet. When the responsible official replies, it lands here — attributed to a verified government inbox, dated, on the record.
-            </Text>
-          )}
-        </View>
-
-        {/* Expert review */}
-        <View style={s.window}>
-          <View style={s.windowHead}>
-            <Text style={s.windowHeadText}>🎓 Expert review</Text>
-            {annotations.length > 0 ? <Text style={s.windowCount}>{annotations.length}</Text> : null}
-          </View>
-          {annotations.length > 0 ? (
-            annotations.map((a) => (
-              <View key={a.id} style={s.post}>
-                <Text style={s.postBody}>{a.annotation_text}</Text>
-                <Text style={s.postMeta}>
-                  {a.profiles?.expert_handle || "Verified expert"}
-                  {a.profiles?.expert_credential ? ` · ${a.profiles.expert_credential}` : ""}
-                  {a.corrected_impact_type || a.corrected_outcome_signal ? " · suggested correction" : ""}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={s.windowEmpty}>
-              No expert review yet. Verified subject-matter experts can annotate this item with context or corrections.
-            </Text>
-          )}
-        </View>
-
         {/* Round-trip status */}
         <View style={s.window}>
           <View style={s.windowHead}><Text style={s.windowHeadText}>🔄 Round-trip status</Text></View>
@@ -497,6 +424,79 @@ export default function ConcernCardDetail() {
           {meetings.length === 0 && !reportRecord && (
             <Text style={s.windowEmpty}>This item is on the record. Follow it to be told when its status changes.</Text>
           )}
+        </View>
+
+        {/* Official reply */}
+        <View style={s.window}>
+          <View style={s.windowHead}><Text style={s.windowHeadText}>✅ Official reply</Text></View>
+          {hasOfficial ? (
+            <View>
+              {card?.official_response ? (
+                <View style={s.post}>
+                  <Text style={s.postBody}>{card.official_response}</Text>
+                  <Text style={s.postMeta}>
+                    {card.official_response_name || "Official"}
+                    {card.official_response_verified && card.official_response_email
+                      ? ` · via ${String(card.official_response_email).split("@")[1]} · verified by email, not identity` : ""}
+                  </Text>
+                </View>
+              ) : null}
+              {reportInfo?.official_response ? (
+                <View style={s.govInbox}>
+                  <Text style={s.govInboxLabel}>Verified government inbox</Text>
+                  <Text style={s.govInboxBody}>{reportInfo.official_response}</Text>
+                  <Text style={s.govInboxMeta}>
+                    {reportInfo.official_response_name ? `${reportInfo.official_response_name} · ` : ""}{reportInfo.official_response_email}
+                    {reportInfo.responded_at ? ` · ${new Date(reportInfo.responded_at).toLocaleDateString()}` : ""}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={s.windowEmpty}>
+              No official response yet. When the responsible official replies, it lands here — attributed to a verified government inbox, dated, on the record.
+            </Text>
+          )}
+        </View>
+
+        {/* Expert review */}
+        <View style={s.window}>
+          <View style={s.windowHead}>
+            <Text style={s.windowHeadText}>🎓 Expert review</Text>
+            {annotations.length > 0 ? <Text style={s.windowCount}>{annotations.length}</Text> : null}
+          </View>
+          {annotations.length > 0 ? (
+            annotations.map((a) => (
+              <View key={a.id} style={s.post}>
+                <Text style={s.postBody}>{a.annotation_text}</Text>
+                <Text style={s.postMeta}>
+                  {a.profiles?.expert_handle || "Verified expert"}
+                  {a.profiles?.expert_credential ? ` · ${a.profiles.expert_credential}` : ""}
+                  {a.corrected_impact_type || a.corrected_outcome_signal ? " · suggested correction" : ""}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={s.windowEmpty}>
+              No expert review yet. Verified subject-matter experts can annotate this item with context or corrections.
+            </Text>
+          )}
+        </View>
+
+        {/* Comments */}
+        <View style={s.window}>
+          <View style={s.windowHead}>
+            <Text style={s.windowHeadText}>💬 Comments</Text>
+            <Text style={s.windowCount}>{ckComments.length}</Text>
+          </View>
+          <CommentKit
+            currentUser={user}
+            comments={ckComments}
+            subIssues={cardSubs}
+            timeAgo={timeAgo}
+            onPost={postCardComment}
+            onCreateSubIssue={createCardSubIssue}
+          />
         </View>
 
         {/* Related civic items */}
