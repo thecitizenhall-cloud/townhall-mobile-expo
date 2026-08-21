@@ -745,7 +745,7 @@ const s = StyleSheet.create({
   tierDot: { width: 9, height: 9, borderRadius: 5 },
   tierLabel: { fontSize: 13, fontWeight: "600", flex: 1 },
   tierPts: { fontSize: 11, color: T.creamDim },
-  nameInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: T.cream, fontSize: 16, textAlign: "center" },
+  nameInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: T.cream, fontSize: 16, textAlign: "center" },
   nameBtns: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 10 },
 
   section: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14, padding: 18, marginBottom: 14 },

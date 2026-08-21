@@ -1170,7 +1170,7 @@ const s = StyleSheet.create({
   weighinSub: { fontSize: 11, color: T.creamDim, lineHeight: 17 },
   ownWordsPrompt: { fontSize: 12, color: T.creamDim, marginBottom: 8, lineHeight: 19 },
 
-  stakeInput: { width: "100%", backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: T.cream, lineHeight: 20, minHeight: 56, textAlignVertical: "top" },
+  stakeInput: { width: "100%", backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: T.cream, lineHeight: 20, minHeight: 56, textAlignVertical: "top" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 },
   rowGap: { flexDirection: "row", gap: 8, alignItems: "center" },
   counter: { fontSize: 11, color: T.creamFaint, flexShrink: 1 },
@@ -1252,7 +1252,7 @@ const s = StyleSheet.create({
   relatedTitle: { fontSize: 13, color: T.cream, flex: 1, lineHeight: 18 },
 
   compose: { flexDirection: "row", gap: 8, alignItems: "flex-end", marginTop: 14, borderTopWidth: 1, borderTopColor: T.border, paddingTop: 10 },
-  composeInput: { flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: T.cream, minHeight: 40, maxHeight: 100 },
+  composeInput: { flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: T.cream, minHeight: 40, maxHeight: 100 },
   composeSend: { backgroundColor: T.amber, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
   composeSendText: { color: T.bg, fontSize: 13, fontWeight: "500" },
 

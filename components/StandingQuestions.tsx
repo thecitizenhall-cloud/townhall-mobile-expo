@@ -226,7 +226,7 @@ const s = StyleSheet.create({
   form: { borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 14, backgroundColor: T.bg },
   label: { fontSize: 12, fontWeight: "600", color: T.cream, marginBottom: 6 },
   hint: { fontSize: 12, lineHeight: 18, color: T.creamDim, marginBottom: 10 },
-  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.border, backgroundColor: "#141310", color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
+  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.borderCtl, backgroundColor: "#141310", color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
 
   choice: { borderWidth: 1, borderColor: T.border, borderRadius: 8, padding: 10, marginTop: 8 },
   choiceOn: { borderColor: T.amber, backgroundColor: T.amberLo },

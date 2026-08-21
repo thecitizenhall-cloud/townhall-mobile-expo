@@ -504,7 +504,7 @@ const s = StyleSheet.create({
   sheetLine: { padding: 10, backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, marginBottom: 12 },
   sheetLineLabel: { color: T.cream, fontSize: 13.5, marginBottom: 3 },
   sheetLineMeta: { color: T.creamDim, fontSize: 11.5, fontVariant: ["tabular-nums"] },
-  sheetInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, color: T.cream, fontSize: 13, padding: 11, minHeight: 88, textAlignVertical: "top" },
+  sheetInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 10, color: T.cream, fontSize: 13, padding: 11, minHeight: 88, textAlignVertical: "top" },
   sheetHint: { color: T.creamFaint, fontSize: 11, lineHeight: 16, marginTop: 8 },
   sheetBtns: { flexDirection: "row", gap: 10, marginTop: 14 },
   sheetCancel: { borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11, justifyContent: "center" },

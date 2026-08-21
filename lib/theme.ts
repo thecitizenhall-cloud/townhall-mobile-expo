@@ -7,6 +7,12 @@ export const T = {
   surfaceHi: "#222019",
   border: "#2C2A26",
   borderHi: "#4A4640",
+  // The boundary of a CONTROL — a TextInput's edge, i.e. how you know it is
+  // there. WCAG 1.4.11 asks 3:1 for that; border is 1.23:1 and borderHi 1.88:1,
+  // and both stay as they are because they draw decorative card edges, which
+  // the rule does not cover. 3.60 / 3.28 / 3.04 : 1 against bg / surface /
+  // surfaceHi. Mirrors lib/theme.js on web — change both together.
+  borderCtl: "#706A61",
   cream: "#F2EDE4",
   // Contrast sweep 2026-08-20, measured against bg/surface/surfaceHi.
   //   creamFaint was #4A4640 — 1.74:1 to 2.06:1, far under WCAG 1.4.3's 4.5:1

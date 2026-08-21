@@ -231,7 +231,7 @@ const s = StyleSheet.create({
   btnSecondaryText: { color: T.amberHi, fontSize: 14 },
   searchWrap: { flex: 1 },
   input: {
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
+    backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderCtl,
     borderRadius: 10, padding: 14, color: T.cream, fontSize: 15,
   },
   resultRow: {

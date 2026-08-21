@@ -150,7 +150,7 @@ const s = StyleSheet.create({
   label: { color: T.creamDim, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
   hint: { color: T.creamDim, fontSize: 12, lineHeight: 18, marginTop: 6 },
   input: {
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
+    backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderCtl,
     borderRadius: 10, padding: 14, color: T.cream, fontSize: 15,
   },
   btn: {

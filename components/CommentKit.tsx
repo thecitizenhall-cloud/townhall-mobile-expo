@@ -323,7 +323,7 @@ const s = StyleSheet.create({
   postMetaText: { fontSize: 11, color: T.creamFaint },
   compose: { marginTop: 10 },
   input: {
-    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 9,
+    backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 9,
     paddingHorizontal: 11, paddingVertical: 9, fontSize: 13, color: T.cream, minHeight: 40,
     textAlignVertical: "top",
   },

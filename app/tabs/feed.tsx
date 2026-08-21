@@ -872,7 +872,7 @@ const s = StyleSheet.create({
   modeChipTextActive: { color: T.amberHi, fontWeight: "600" },
   composeTapIcon: { fontSize: 18, color: T.amberHi },
   composeCard: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 12 },
-  composeInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: T.cream, minHeight: 70, textAlignVertical: "top" },
+  composeInput: { backgroundColor: T.bg, borderWidth: 1, borderColor: T.borderCtl, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: T.cream, minHeight: 70, textAlignVertical: "top" },
   composeFooter: { marginTop: 8 },
   tagRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   tagChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, borderWidth: 1 },
