@@ -14,6 +14,7 @@ import { timeAgo } from "../../lib/format";
 import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
 import { SITE_URL } from "../../lib/config";
 import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
+import StandingQuestions from "../../components/StandingQuestions";
 
 const OUTCOME_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending vote", color: T.amberHi, bg: T.amberLo },
@@ -458,6 +459,13 @@ export default function ConcernCardDetail() {
             </Text>
           )}
         </View>
+
+        {/* Standing questions — the counterpart to the official response above.
+            That block says what an official DID say; this says what residents
+            asked and the record still hasn't settled. Placed here so the two
+            read together: response present, versus question outstanding. Same
+            position as the web concern card. */}
+        {card ? <StandingQuestions card={card} user={user} verified={verified} /> : null}
 
         {/* Expert review */}
         <View style={s.window}>
