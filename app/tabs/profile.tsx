@@ -19,6 +19,12 @@ type WeekStats = { read: number; watched: number; voted: number; responded: numb
 // Exactly the types the notification promise allows.
 const NOTIF_TYPES: Record<string, { icon: string; label: string }> = {
   round_trip_closed: { icon: "✓", label: "Round trip closed — a response landed" },
+  // Without this the fallback below renders the raw enum, so a resolved
+  // standing question reached the resident as the literal string
+  // "question_resolved" — the same defect as the old "Status updated to:
+  // approved". Its own type rather than round_trip_closed, whose copy ("a
+  // response landed") is true for 'answered' and wrong for 'ignored'.
+  question_resolved: { icon: "?", label: "A question you put on the record has a result" },
   meeting_imminent: { icon: "!", label: "A meeting affecting your neighborhood is coming up" },
   watched_item_moved: { icon: "→", label: "Something you follow has moved" },
   route_affected: { icon: "🚧", label: "Something affects a road on one of your routes" },
@@ -28,7 +34,10 @@ const NOTIF_TYPES: Record<string, { icon: string; label: string }> = {
 // the Routes section (mirrors web), not the generic Alerts list, since it
 // only controls that one separate feature.
 const PREF_ROWS = [
-  { key: "round_trip_closed", label: "An official responds to an issue you raised or voted on" },
+  // Gated on the round_trip_closed preference, because a resolved standing
+  // question is exactly the round trip closing — so the label has to promise
+  // both, not just official responses.
+  { key: "round_trip_closed", label: "An official responds, or the record settles a question you asked" },
   { key: "meeting_imminent", label: "A council meeting affecting your neighborhood is within 48 hours" },
   { key: "watched_item_moved", label: "A civic issue you're following has been updated" },
 ] as const;
