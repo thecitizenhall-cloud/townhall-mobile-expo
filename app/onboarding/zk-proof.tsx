@@ -130,7 +130,7 @@ export default function OnboardingZKProof() {
         {(status === "proving") && <ActivityIndicator color={T.amber} style={{ marginBottom: 10 }} />}
         {status === "done" && <Text style={s.checkmark}>✓</Text>}
         {status === "error" && <Text style={s.errorMark}>✗</Text>}
-        <Text style={[s.statusText, status === "error" && { color: T.red }]}>
+        <Text style={[s.statusText, status === "error" && { color: T.redHi }]}>
           {statusMsg}
         </Text>
       </View>
@@ -204,7 +204,7 @@ const s = StyleSheet.create({
   },
   statusText: { color: T.creamDim, fontSize: 14, textAlign: "center" },
   checkmark: { color: T.teal, fontSize: 36, marginBottom: 8 },
-  errorMark: { color: T.red, fontSize: 36, marginBottom: 8 },
+  errorMark: { color: T.redHi, fontSize: 36, marginBottom: 8 },
   btn: { backgroundColor: T.amber, borderRadius: 10, padding: 16, alignItems: "center", marginTop: 8 },
   btnDisabled: { opacity: 0.5 },
   btnText: { color: T.bg, fontSize: 15, fontWeight: "600" },

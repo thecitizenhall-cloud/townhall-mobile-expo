@@ -88,7 +88,9 @@ const s = StyleSheet.create({
     color: T.amberHi, fontSize: 10, fontWeight: "600",
     letterSpacing: 0.8, flexShrink: 1,
   },
-  sourceAlert: { color: T.red },
+  // T.red is 3.00:1 to 3.55:1 — fine for a border or a fill, under 4.5:1 as
+  // text. redHi (5.46:1 worst) is the text-safe member of the pair.
+  sourceAlert: { color: T.redHi },
   outcomePill: {
     backgroundColor: T.tealLo, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },

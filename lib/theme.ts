@@ -8,8 +8,18 @@ export const T = {
   border: "#2C2A26",
   borderHi: "#4A4640",
   cream: "#F2EDE4",
-  creamDim: "#9A9188",
-  creamFaint: "#4A4640",
+  // Contrast sweep 2026-08-20, measured against bg/surface/surfaceHi.
+  //   creamFaint was #4A4640 — 1.74:1 to 2.06:1, far under WCAG 1.4.3's 4.5:1
+  //   for body text. It is the token behind 98 usages across 18 files (every
+  //   placeholder, caption and timestamp in the app), all of them text, so one
+  //   token carried the whole defect.
+  //   creamDim was #9A9188 — passing at 5.26:1, raised to the web value for
+  //   parity and a little headroom.
+  // #8F857B is the value that clears 4.5:1 on ALL THREE surfaces in BOTH apps;
+  // web's #8D8379 reached only 4.39:1 on this app's lighter surfaceHi. Web was
+  // moved to the same value in the same sweep — keep them identical.
+  creamDim: "#AAA198",
+  creamFaint: "#8F857B",
   amber: "#D4922A",
   amberLo: "#2A1E08",
   amberMid: "#8C5E14",
