@@ -62,10 +62,15 @@ jobs:
       - name: Ask Claude Code to prepare a fix
         if: steps.checks.outputs.failed == '1'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Claude Code runs on the Claude subscription, not API credits. Only this
+          # token is set: if ANTHROPIC_API_KEY were also present the CLI could pick it
+          # up and bill credits silently. Mint with `claude setup-token`.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm install -g @anthropic-ai/claude-code
+          # Pinned: an unpinned global install lets an upstream release change
+          # this job's behaviour with no commit on our side.
+          npm install -g @anthropic-ai/claude-code@2.1.241
 
           BRANCH="bot/nightly-maintenance-$(date -u +%Y%m%d)"
           git checkout -b "$BRANCH"
@@ -81,6 +86,9 @@ jobs:
           REPORT="$RUNNER_TEMP/claude-report.txt"
           cat .github/claude/nightly-maintenance-instructions.md "${{ steps.checks.outputs.findings_path }}" | \
             claude -p \
+              --model claude-opus-5 \
+              --effort high \
+              --fallback-model claude-sonnet-5 \
               --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
               --output-format text \
               "Read the scope instructions and the findings above (piped via stdin) and prepare a fix per the instructions. Stop and do nothing if nothing in scope is safely fixable. End your reply with the PR body in the exact ## Found / ## Changed / ## Verification / ## Could not safely fix format from the instructions — that's what gets posted as the PR body verbatim." \
@@ -108,3 +116,18 @@ jobs:
           name: maintenance-findings
           path: ${{ steps.checks.outputs.findings_path }}
           retention-days: 14
+
+      # The web repo's copy of this workflow has had this since it shipped; the
+      # mobile copy did not, so a failure here was silent — the only symptom was
+      # a nightly that quietly stopped producing anything.
+      - name: Alert on unhandled failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          [ -z "$RESEND_API_KEY" ] || [ -z "$ALERT_EMAIL" ] && { echo "Alert secrets not set; skipping."; exit 0; }
+          curl -sS -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"from\":\"Townhall Café <alerts@townhallcafe.org>\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"ALERT: mobile nightly-maintenance workflow errored\",\"text\":\"The townhall-mobile-expo nightly-maintenance workflow itself failed (not just a check) - it may need a human look. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
