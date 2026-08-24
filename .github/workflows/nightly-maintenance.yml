@@ -30,7 +30,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: @anthropic-ai/claude-code requires node >=22 and the fix
+          # step installs it in this job. npm only WARNS on EBADENGINE and
+          # installs anyway, so 20 fails later and obscurely. next@16 accepts
+          # >=20.9.0 with no ceiling, so the build is unaffected.
+          node-version: 22
 
       - name: Run checks, collect findings
         id: checks
