@@ -17,6 +17,30 @@ const SOURCE_LABEL: Record<CivicItem["source"], string> = {
   noaa: "Weather Alert",
 };
 
+// A bare "2026-01-07" parsed as UTC midnight renders as January 6th for every
+// reader west of Greenwich, and this feed is entirely in New Jersey — so parse
+// date-only values at local noon.
+function shortDate(value?: string | null): string | null {
+  if (!value) return null;
+  const day = String(value).split("T")[0];
+  const parts = day.split("-");
+  if (parts.length !== 3) return null;
+  return new Date(+parts[0], +parts[1] - 1, +parts[2])
+    .toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// BOTH dates when they disagree. town_feed carries first_seen beside the
+// meeting date precisely so a January hearing ingested last week can say so: the
+// meeting date alone makes a just-published record look stale, and the
+// first-seen date alone makes a seven-month-old hearing look like this week's
+// news. Non-council items (bulletins, weather) have only the one date.
+function dateLabel(item: any): string {
+  const heard = shortDate(item.created_at);
+  const seen = shortDate(item._firstSeen);
+  if (heard && seen && heard !== seen) return `First appeared ${seen} · heard ${heard}`;
+  return heard || seen || "";
+}
+
 export default function CivicFeedItem({ item, onPress }: Props) {
   const isAlert = item.source === "noaa";
   const label = SOURCE_LABEL[item.source] ?? item.source;
@@ -45,11 +69,7 @@ export default function CivicFeedItem({ item, onPress }: Props) {
       ) : null}
 
       <View style={s.footer}>
-        <Text style={s.date}>
-          {new Date(item.created_at).toLocaleDateString("en-US", {
-            month: "short", day: "numeric",
-          })}
-        </Text>
+        <Text style={s.date}>{dateLabel(item)}</Text>
         {typeof item._dist === "number" && (
           <Text style={[s.date, { color: T.tealHi, fontWeight: "600" }]}>
             · {item._dist < 0.1 ? "<0.1" : item._dist.toFixed(1)} mi away
