@@ -7,9 +7,9 @@ import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
+import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
-import { getConcernCardsForNeighborhood } from "../../lib/concernCards";
 import CivicPulse from "../../components/CivicPulse";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
@@ -113,6 +113,10 @@ export default function FeedScreen() {
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [districtCards, setDistrictCards] = useState<CivicItem[]>([]);
+  // TOWN-WIDE counts from town_feed, never measured off the loaded array.
+  const [feedCounts, setFeedCounts] = useState<FeedCounts>({ ...EMPTY_COUNTS });
+  const [bandFilter, setBandFilter] = useState<FeedFilter>("all");
+  const [bandLoading, setBandLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
 
@@ -199,33 +203,26 @@ export default function FeedScreen() {
       }
       setNeighborhoodSlug(hoodSlug);
 
+      // The council record comes from town_feed, which orders by what the
+      // record is DOING (a question answered, then what moved, then what is
+      // being decided, then what is past due, then what is new) and returns
+      // town-wide counts with it. The web route is still asked for the things
+      // town_feed does not carry — bulletins, agendas, weather — but its own
+      // concern-card items are dropped: it ordered them by row insertion time,
+      // which stamped a January hearing with the August date it was ingested.
+      const councilPromise = loadTownFeed(hoodSlug, { filter: bandFilter, limit: 20 });
+
       const civicPromise = (async (): Promise<CivicItem[]> => {
         try {
           const qs = new URLSearchParams();
           if (hoodSlug) qs.set("neighborhood_id", hoodSlug);
           const res = await fetch(`${SITE_URL}/api/civic-feed?${qs.toString()}`);
-          if (res.ok) return (await res.json()).items ?? [];
+          if (res.ok) {
+            const items: CivicItem[] = (await res.json()).items ?? [];
+            return items.filter((it) => it.source !== "civic_engine");
+          }
         } catch { /* degrade to posts-only */ }
         return [];
-      })();
-
-      // B4: the resident's ELECTION DISTRICT cards (hyper-local, geo-assigned by
-      // parcel), to lead the feed. Only when a district was detected at onboarding
-      // (profiles.district_id); shaped to CivicItem like the Near-me path.
-      const districtPromise = (async (): Promise<CivicItem[]> => {
-        if (!p?.district_id) return [];
-        try {
-          const { data: dh } = await supabase.from("neighborhoods")
-            .select("slug, name").eq("id", p.district_id).maybeSingle();
-          if (!dh?.slug) return [];
-          const dc = await getConcernCardsForNeighborhood(dh.slug, 12);
-          return dc.map((c: any) => ({
-            source: "civic_engine", concern_card_id: c.id, external_id: `district-${c.id}`,
-            tag: "district", title: c.title, body: c.summary, url: null,
-            address: c.affected_area, created_at: c.meeting_date, image_url: null,
-            outcome_signal: c.outcome_signal, _inDistrict: true, _districtName: dh.name,
-          })) as CivicItem[];
-        } catch { return []; }
       })();
 
       // Resident posts (with author profile), scoped to the neighborhood.
@@ -251,10 +248,10 @@ export default function FeedScreen() {
       // ── Everything that needs only `p`/user.id, in parallel ────────────
       // (verification, civic feed, posts, open issues, both watch tables) —
       // previously a long serial chain with issues + watch state stranded last.
-      const [verified, civicItems, districtItems, postRes, issRes, wiRes, wcRes] = await Promise.all([
+      const [verified, civicItems, council, postRes, issRes, wiRes, wcRes] = await Promise.all([
         hasResidencyProof(user.id, p?.neighborhood_id ?? null),
         civicPromise,
-        districtPromise,
+        councilPromise,
         postQ,
         issuesQ.order("voice_count", { ascending: false }).limit(20),
         supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
@@ -262,8 +259,12 @@ export default function FeedScreen() {
       ]);
 
       setVerified(verified);
-      setCivic(civicItems);
-      setDistrictCards(districtItems);
+      // Council cards first, then whatever the route still supplies. town_feed
+      // already led with the resident's election district, so the district set
+      // is read off its own answer rather than fetched a second time.
+      setCivic([...council.items, ...civicItems]);
+      setFeedCounts(council.counts);
+      setDistrictCards(council.items.filter((c) => c._inDistrict));
       setIssues(issRes.data || []);
       setWatchedIds(new Set([
         ...((wiRes.data || []).map((w: any) => w.issue_id).filter(Boolean)),
@@ -416,6 +417,26 @@ export default function FeedScreen() {
     setGeocodingReport(false);
   }
 
+  // Pressing a band pill asks the town a question; it does not re-slice the
+  // twenty cards already in hand. The first load is done by the main loader, so
+  // this fires only on a change.
+  const bandFilterRef = useRef<FeedFilter>(bandFilter);
+  useEffect(() => {
+    if (bandFilterRef.current === bandFilter) return;
+    bandFilterRef.current = bandFilter;
+    let cancelled = false;
+    setBandLoading(true);
+    loadTownFeed(neighborhoodSlug, { filter: bandFilter, limit: 20 })
+      .then((res) => {
+        if (cancelled) return;
+        setFeedCounts(res.counts);
+        setCivic((prev) => [...res.items, ...prev.filter((c) => c.source !== "civic_engine")]);
+        setDistrictCards(res.items.filter((c) => c._inDistrict));
+      })
+      .finally(() => { if (!cancelled) setBandLoading(false); });
+    return () => { cancelled = true; };
+  }, [bandFilter, neighborhoodSlug]);
+
   useEffect(() => {
     if (!reportMapReady || !reportCoords) return;
     reportMapRef.current?.injectJavaScript(`
@@ -485,23 +506,27 @@ export default function FeedScreen() {
 
   // Stream items, filtered.
   let streamItems: FeedItem[] = [];
-  const distIds = new Set(districtCards.map((c) => c.concern_card_id));
   if (filter === "all") {
-    // B4: lead with the resident's district cards; then the date-sorted rest,
-    // deduped so a district card doesn't also appear in the general civic stream.
-    const rest = [
-      ...civic.filter((c) => !distIds.has(c.concern_card_id)).map((c) => ({ type: "civic" as const, data: c })),
+    // Council matters keep the order town_feed gave them — band first, and the
+    // district cards already lead within that. Sorting them by date here is what
+    // the old code did, and it silently overrode the ranking: a card surfaced
+    // because a question you asked came back would sink below an older hearing
+    // simply for being older. Bulletins and resident posts are a different kind
+    // of thing from a different table, so they follow, date-sorted among
+    // themselves rather than merged into the record's ordering.
+    const others = [
+      ...civic.filter((c) => c.source !== "civic_engine").map((c) => ({ type: "civic" as const, data: c })),
       ...nonBotPosts.map((p) => ({ type: "post" as const, data: p })),
     ].sort((a, b) => new Date(b.data.created_at).getTime() - new Date(a.data.created_at).getTime());
     streamItems = [
-      ...districtCards.map((c) => ({ type: "civic" as const, data: c })),
-      ...rest,
+      ...concernCards.map((c) => ({ type: "civic" as const, data: c })),
+      ...others,
     ];
   } else if (filter === "issue") {
-    streamItems = [
-      ...districtCards.map((c) => ({ type: "civic" as const, data: c })),
-      ...concernCards.filter((c) => !distIds.has(c.concern_card_id)).map((c) => ({ type: "civic" as const, data: c })),
-    ];
+    // The council record as the server ordered it. This used to re-filter the
+    // same ten items that had already arrived, which made the pill mean "hide
+    // the posts" rather than "show me council matters".
+    streamItems = concernCards.map((c) => ({ type: "civic" as const, data: c }));
   } else if (filter === "bulletin") {
     streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
   } else if (filter === "escalated") {
@@ -518,6 +543,18 @@ export default function FeedScreen() {
   }
 
   const hasEscalated = nonBotPosts.some((p) => p.escalated);
+  // Band pills: town_feed PARAMETERS with the town-wide count beside each. A
+  // band with nothing in it is not offered — "Past due 0" invites a tap that
+  // answers with an empty list, which reads as a broken feed rather than as
+  // good news.
+  const bandTabs = [
+    { key: "all",       label: "All",           count: feedCounts.n_total,     show: true },
+    { key: "deciding",  label: "Being decided", count: feedCounts.n_deciding,  show: feedCounts.n_deciding > 0 },
+    { key: "past_due",  label: "Past due",      count: feedCounts.n_past_due,  show: feedCounts.n_past_due > 0 },
+    { key: "new",       label: "New to you",    count: feedCounts.n_new,       show: feedCounts.n_new > 0 },
+    { key: "following", label: "Following",     count: feedCounts.n_following, show: feedCounts.n_following > 0 },
+  ].filter((t) => t.show);
+
   const filterTabs = [
     { key: "all", label: "All", show: true },
     { key: "map", label: "🗺 Map", show: true },
@@ -680,6 +717,25 @@ export default function FeedScreen() {
             {/* The Pulse — the feed's opening "feel" (web parity). Main feed
                 only; not on the first-session arrival, which has its own frame. */}
             {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
+
+            {/* Band pills — what the record is DOING. Each is an RPC parameter;
+                the number is the town-wide count, not the size of the page. */}
+            {bandTabs.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
+                {bandTabs.map((t) => (
+                  <Pressable key={t.key}
+                    disabled={bandLoading}
+                    onPress={() => setBandFilter(t.key as FeedFilter)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: bandFilter === t.key, disabled: bandLoading }}
+                    style={[s.filterPill, bandFilter === t.key && s.filterPillActive]}>
+                    <Text style={[s.filterPillText, bandFilter === t.key && s.filterPillTextActive]}>
+                      {t.label}{t.key !== "all" ? ` ${t.count}` : ""}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
 
             {/* Filter tabs */}
             {filterTabs.length > 1 && (
