@@ -59,8 +59,13 @@ export async function recordConcernCardView(userId: string, concernCardId: strin
 // first-five-minutes welcome block.
 export async function getConcernCardsForNeighborhood(neighborhoodSlug?: string | null, limit = 5): Promise<any[]> {
   if (!neighborhoodSlug) return [];
+  // `!inner` is load-bearing. A filter on a NON-inner embed filters the embedded
+  // rows, not the parent: an unsurfaced or archived card still returns its
+  // neighborhood_scores row with `concern_cards: null`. `limit` counts parent
+  // rows, so those nulls eat slots and asking for 12 can yield far fewer. Same
+  // fix as web lib/concernCards.js; pages/api/civic-feed.js already used it.
   const { data } = await supabase.from("neighborhood_scores")
-    .select("*, concern_cards(*)")
+    .select("*, concern_cards!inner(*)")
     .eq("neighborhood_id", neighborhoodSlug)
     .eq("concern_cards.surfaces_to_feed", true)
     .eq("concern_cards.archived", false)
@@ -84,7 +89,13 @@ export async function getWeeklyActivity(userId: string): Promise<WeeklyActivity>
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const [views, watches, votes] = await Promise.allSettled([
     supabase.from("concern_card_views").select("*", { count: "exact", head: true }).eq("user_id", userId).gte("first_viewed_at", weekAgo),
-    supabase.from("watched_concern_cards").select("*", { count: "exact", head: true }).eq("user_id", userId).gte("watched_at", weekAgo),
+    // CQ-NEW-2, ported from web lib/concernCards.js: "items followed" counts
+    // card_watches, the concern CARD follow table. watched_concern_cards is the
+    // civic ISSUE follow table — a different table with a different schema, and
+    // the note column is `created_at`, not `watched_at`. Counting the wrong one
+    // reported 0 for any resident who followed only council cards, which is
+    // exactly what the feed's Follow buttons and /api/seed-watchers produce.
+    supabase.from("card_watches").select("*", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", weekAgo),
     supabase.from("votes").select("*", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", weekAgo),
   ]);
 
