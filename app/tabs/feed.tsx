@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
   TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
@@ -104,6 +104,12 @@ export default function FeedScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isFirstSession, setIsFirstSession] = useState(false);
+  // Onboarding stamps first_session_completed_at before routing here, so the
+  // column is ALWAYS set by the time this screen loads and can never identify
+  // the first session on its own. welcome.tsx passes ?arrival=1 to say "this is
+  // that session". Web solves the same problem with an in-memory isFirstTime
+  // flag (pages/app.jsx); mobile has no equivalent across a route change.
+  const { arrival } = useLocalSearchParams<{ arrival?: string }>();
   const [verified, setVerified] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
@@ -184,7 +190,7 @@ export default function FeedScreen() {
 
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       setProfile(p);
-      setIsFirstSession(!p?.first_session_completed_at);
+      setIsFirstSession(!p?.first_session_completed_at || arrival === "1");
       supabase.from("route_watch_roads").select("road_name, road_name_normalized")
         .eq("user_id", user.id).then(({ data }) => setMyRoads(data || []));
 
@@ -602,11 +608,32 @@ export default function FeedScreen() {
       const { data } = await supabase.from("concern_cards")
         .select("id,title,summary,outcome_signal,meeting_date,affected_area,parcel_lat,parcel_lon")
         .not("parcel_lat", "is", null).eq("surfaces_to_feed", true).eq("archived", false).limit(300);
-      const ranked = (data || []).map((c: any) => ({
-        source: "civic_engine", concern_card_id: c.id, title: c.title, body: c.summary,
-        outcome_signal: c.outcome_signal, created_at: c.meeting_date, address: c.affected_area,
+      // external_id is REQUIRED by CivicItem and is what keyExtractor builds the
+      // FlatList key from. It was missing here, so every Near-me row keyed to
+      // "civic-undefined" and VirtualizedList could not tell the rows apart —
+      // after a scroll or a re-render, tapping one card could open another.
+      //
+      // `cc_${id}` deliberately matches cardToCivicItem in lib/townFeed.ts: the
+      // same concern card gets the same key in either lane. Safe because Near-me
+      // REPLACES streamItems rather than merging into it (see the filter switch),
+      // so the two lanes are never in one list at once.
+      //
+      // No `as CivicItem[]` — the cast is what silenced this in the first place,
+      // and tsc will now catch the next field that goes missing.
+      const ranked: CivicItem[] = (data || []).map((c: any) => ({
+        source: "civic_engine" as const,
+        external_id: `cc_${c.id}`,
+        concern_card_id: c.id,
+        tag: "near",
+        title: c.title,
+        body: c.summary,
+        url: null,
+        address: c.affected_area,
+        created_at: c.meeting_date,
+        image_url: null,
+        outcome_signal: c.outcome_signal,
         _dist: milesBetween(aLat, aLon, c.parcel_lat, c.parcel_lon),
-      })) as CivicItem[];
+      }));
       ranked.sort((a, b) => (a._dist ?? 9e9) - (b._dist ?? 9e9));
       setNearbyCards(ranked.slice(0, 30));
       setFilter("near");
@@ -634,7 +661,9 @@ export default function FeedScreen() {
         style={s.root}
         contentContainerStyle={s.content}
         data={streamItems}
-        keyExtractor={(item, i) => (item.type === "civic" ? `civic-${item.data.external_id}` : `post-${item.data.id ?? i}`)}
+        keyExtractor={(item, i) => (item.type === "civic"
+          ? `civic-${item.data.external_id ?? item.data.concern_card_id ?? i}`
+          : `post-${item.data.id ?? i}`)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
         ListHeaderComponent={
           <View>
