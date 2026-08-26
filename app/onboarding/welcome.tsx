@@ -53,6 +53,10 @@ export default function OnboardingWelcome() {
         }
       }
 
+      // NOTE: this stamp is why /tabs/feed is sent ?arrival=1 below. The feed
+      // derives "first session" from first_session_completed_at, and this write
+      // lands BEFORE the resident ever reaches the feed — so without the param
+      // the arrival experience is dead on the one session it exists for.
       // Mark first session complete
       // upsert, not update — see neighborhood.tsx: a missing profiles row must
       // not silently no-op the onboarding completion.
@@ -101,7 +105,7 @@ export default function OnboardingWelcome() {
         </>
       )}
 
-      <TouchableOpacity style={s.btn} onPress={() => router.replace("/tabs/feed")}>
+      <TouchableOpacity style={s.btn} onPress={() => router.replace("/tabs/feed?arrival=1")}>
         <Text style={s.btnText}>Go to my neighborhood feed</Text>
       </TouchableOpacity>
     </View>
