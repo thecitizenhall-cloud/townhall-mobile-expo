@@ -123,6 +123,7 @@ export default function FeedScreen() {
   const [feedCounts, setFeedCounts] = useState<FeedCounts>({ ...EMPTY_COUNTS });
   const [bandFilter, setBandFilter] = useState<FeedFilter>("all");
   const [bandLoading, setBandLoading] = useState(false);
+  const [feedHasMore, setFeedHasMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<any>(null);
 
@@ -270,6 +271,7 @@ export default function FeedScreen() {
       // is read off its own answer rather than fetched a second time.
       setCivic([...council.items, ...civicItems]);
       setFeedCounts(council.counts);
+      setFeedHasMore(council.hasMore);
       setDistrictCards(council.items.filter((c) => c._inDistrict));
       setIssues(issRes.data || []);
       setWatchedIds(new Set([
@@ -436,6 +438,7 @@ export default function FeedScreen() {
       .then((res) => {
         if (cancelled) return;
         setFeedCounts(res.counts);
+        setFeedHasMore(res.hasMore);
         setCivic((prev) => [...res.items, ...prev.filter((c) => c.source !== "civic_engine")]);
         setDistrictCards(res.items.filter((c) => c._inDistrict));
       })
@@ -560,6 +563,29 @@ export default function FeedScreen() {
     { key: "new",       label: "New to you",    count: feedCounts.n_new,       show: feedCounts.n_new > 0 },
     { key: "following", label: "Following",     count: feedCounts.n_following, show: feedCounts.n_following > 0 },
   ].filter((t) => t.show);
+
+  // Reaching past the first twenty. Offset is the count of council cards already
+  // held, not a page number, so a card archived by an overnight dedup between two
+  // taps shifts the window by one rather than skipping a page. Counts are re-read
+  // from each response because they describe the town, not the page, and can
+  // legitimately move while someone is reading.
+  async function loadMoreFeed() {
+    if (bandLoading || !feedHasMore) return;
+    setBandLoading(true);
+    try {
+      const held = civic.filter((c) => c.source === "civic_engine");
+      const more = await loadTownFeed(neighborhoodSlug, {
+        filter: bandFilter, limit: 20, offset: held.length,
+      });
+      const have = new Set(held.map((c) => c.external_id));
+      const fresh = more.items.filter((c) => !have.has(c.external_id));
+      setCivic((prev) => [...prev, ...fresh]);
+      setFeedCounts(more.counts);
+      setFeedHasMore(more.hasMore);
+    } finally {
+      setBandLoading(false);
+    }
+  }
 
   const filterTabs = [
     { key: "all", label: "All", show: true },
@@ -801,6 +827,26 @@ export default function FeedScreen() {
             />
           );
         }}
+        onEndReachedThreshold={0.6}
+        onEndReached={() => { if (filter === "all" && feedHasMore) loadMoreFeed(); }}
+        ListFooterComponent={
+          filter === "all" && concernCards.length > 0 ? (
+            <View style={{ paddingVertical: 18, alignItems: "center" }}>
+              {bandLoading ? (
+                <ActivityIndicator color={T.amber} />
+              ) : feedHasMore ? (
+                <Pressable onPress={loadMoreFeed} style={s.filterPill}>
+                  <Text style={s.filterPillText}>Load more</Text>
+                </Pressable>
+              ) : (
+                <Text style={{ color: T.creamFaint, fontSize: 11 }}>
+                  End of the record · {concernCards.length}{" "}
+                  {bandFilter === "all" ? "matters" : "matching this"}
+                </Text>
+              )}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.emptyText}>
