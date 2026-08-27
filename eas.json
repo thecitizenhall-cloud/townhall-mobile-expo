@@ -13,7 +13,7 @@
       "ios": { "resourceClass": "m-medium" },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://wjgtppyevlehfpwrbwzx.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqZ3RwcHlldmxlaGZwd3Jid3p4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyNDMxMTgsImV4cCI6MjA5MjgxOTExOH0.0nwg1fs2oe5uqeX_nmXSVos-mVChcFvt-K0hFx-xbvU",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_L3fx_Q8B80wYCpaILUAQ8A_mtaDXSUT",
         "EXPO_PUBLIC_SITE_URL": "https://www.townhallcafe.org"
       }
     },
@@ -25,7 +25,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://wjgtppyevlehfpwrbwzx.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqZ3RwcHlldmxlaGZwd3Jid3p4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyNDMxMTgsImV4cCI6MjA5MjgxOTExOH0.0nwg1fs2oe5uqeX_nmXSVos-mVChcFvt-K0hFx-xbvU",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_L3fx_Q8B80wYCpaILUAQ8A_mtaDXSUT",
         "EXPO_PUBLIC_SITE_URL": "https://www.townhallcafe.org"
       }
     }
