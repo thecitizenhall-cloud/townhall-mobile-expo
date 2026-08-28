@@ -6,6 +6,7 @@ import {
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
+import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 import { getCurrentUser } from "../../lib/sessionUser";
@@ -600,9 +601,12 @@ export default function FeedScreen() {
       // district_id. Resolve their district LOCALLY from the anchor point
       // (point-in-polygon; never sent out) and store just the id. Fire-and-forget,
       // one-shot (skips if already set). Activates B4 for them.
-      if (currentUser?.id && !profile?.district_id) {
-        detectDistrict(aLat, aLon)
-          .then((d) => { if (d?.id) supabase.from("profiles").update({ district_id: d.id }).eq("id", currentUser.id); })
+      // profiles.district_id is frozen to null by migration 106, so it can no
+      // longer answer "do they have one" — resident_districts does.
+      if (currentUser?.id) {
+        getMyDistrictId(currentUser.id)
+          .then((existing) => (existing ? null : detectDistrict(aLat, aLon)))
+          .then((d) => { if (d?.id) return setMyDistrictId(currentUser.id, d.id); })
           .catch(() => {});
       }
       const { data } = await supabase.from("concern_cards")

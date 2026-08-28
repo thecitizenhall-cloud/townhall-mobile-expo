@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
+import { setMyDistrictId } from "../../lib/district";
 import { supabase } from "../../lib/supabase";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
@@ -120,8 +121,11 @@ export default function OnboardingNeighborhood() {
       id: user.id,
       neighborhood_id: hood.id,
       neighborhood: hood.name,
-      district_id,
     });
+    // District goes to its own table (migration 106), never onto profiles —
+    // profiles is anon-readable in full. Kept OUT of the upsert above so a
+    // district failure can never take onboarding's neighborhood write with it.
+    await setMyDistrictId(user.id, district_id);
 
     setSaving(false);
 
