@@ -18,6 +18,9 @@ import StandingQuestions from "../../components/StandingQuestions";
 
 const OUTCOME_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending vote", color: T.amberHi, bg: T.amberLo },
+  // Not a decision state — nothing will be voted on. Mirrors web's
+  // ConcernCardDetailScreen (migration 107).
+  announced: { label: "For information", color: T.creamDim, bg: T.surface },
   approved: { label: "Approved", color: T.tealHi, bg: T.tealLo },
   rejected: { label: "Rejected", color: T.redHi, bg: T.redLo },
   tabled: { label: "Tabled", color: T.creamDim, bg: T.surface },

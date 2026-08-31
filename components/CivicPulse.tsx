@@ -59,6 +59,8 @@ export default function CivicPulse({ townId }: { townId: string | null }) {
   const jan1 = new Date(now.getFullYear(), 0, 1);
   const d30 = new Date(now); d30.setDate(d30.getDate() - 30);
   const d7 = new Date(now); d7.setDate(d7.getDate() - 7);
+  // An announcement was never decided, so it must not sit in the "N decided"
+  // denominator and deflate the approval rate.
   const DECIDED = new Set(["approved", "denied", "deferred"]);
 
   const empty = () => ({ total: 0, land: 0, appr: 0, dec: 0 });
