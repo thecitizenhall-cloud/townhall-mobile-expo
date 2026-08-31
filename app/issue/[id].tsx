@@ -1209,7 +1209,7 @@ const s = StyleSheet.create({
   dashedBtnText: { color: T.creamDim, fontSize: 13 },
 
   perspLabel: { fontSize: 10, color: T.creamFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6, fontWeight: "500" },
-  perspCard: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 9, backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: T.border },
+  perspCard: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 9, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border },
   perspBody: { fontSize: 12, color: T.creamDim, lineHeight: 20, fontStyle: "italic" },
   perspName: { fontSize: 10, color: T.creamFaint, marginTop: 4 },
 

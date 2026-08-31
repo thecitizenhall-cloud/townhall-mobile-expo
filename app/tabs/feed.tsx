@@ -24,10 +24,10 @@ import PostCard from "../../components/PostCard";
 // share one source list. Resident posts and civic issues are read from Supabase.
 
 const TAGS: Record<string, { bg: string; color: string; border: string }> = {
-  banter: { bg: "#2A1E08", color: "#F0B84A", border: "#8C5E14" },
-  issue: { bg: "#0D1E35", color: "#85B7EB", border: "#185FA5" },
-  question: { bg: "#0A2A1E", color: "#4CAF80", border: "#1D9E75" },
-  bulletin: { bg: "#1A1835", color: "#AFA9EC", border: "#534AB7" },
+  banter: { bg: T.amberLo, color: T.amberHi, border: T.amberMid },
+  issue: { bg: T.blueLo, color: T.blueHi, border: T.blueMid },
+  question: { bg: T.tealLo, color: T.tealHi, border: T.teal },
+  bulletin: { bg: T.purpleLo, color: T.purpleHi, border: T.purpleMid },
 };
 
 // Tags the general composer offers. Mirrors web: Banter is shelved (its TAGS

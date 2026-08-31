@@ -8,16 +8,16 @@ import { timeAgo, initials } from "../lib/format";
 import ReportButton from "./ReportButton";
 
 const TAGS: Record<string, { bg: string; color: string; border: string }> = {
-  banter: { bg: "#2A1E08", color: "#F0B84A", border: "#8C5E14" },
-  issue: { bg: "#0D1E35", color: "#85B7EB", border: "#185FA5" },
-  question: { bg: "#0A2A1E", color: "#4CAF80", border: "#1D9E75" },
-  bulletin: { bg: "#1A1835", color: "#AFA9EC", border: "#534AB7" },
+  banter: { bg: T.amberLo, color: T.amberHi, border: T.amberMid },
+  issue: { bg: T.blueLo, color: T.blueHi, border: T.blueMid },
+  question: { bg: T.tealLo, color: T.tealHi, border: T.teal },
+  bulletin: { bg: T.purpleLo, color: T.purpleHi, border: T.purpleMid },
 };
 
 const AV_COLORS = [
-  { bg: "#2A1E08", color: "#F0B84A" }, { bg: "#0A2A1E", color: "#4CAF80" },
-  { bg: "#1A1835", color: "#AFA9EC" }, { bg: "#0D1E35", color: "#85B7EB" },
-  { bg: "#2A0E0A", color: "#E57373" },
+  { bg: T.amberLo, color: T.amberHi }, { bg: T.tealLo, color: T.tealHi },
+  { bg: T.purpleLo, color: T.purpleHi }, { bg: T.blueLo, color: T.blueHi },
+  { bg: T.redLo, color: T.redHi },
 ];
 function av(id?: string) {
   let h = 0;
@@ -117,10 +117,10 @@ const s = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   avatar: { width: 34, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 12, fontWeight: "600" },
-  botAvatar: { width: 34, height: 34, borderRadius: 9, backgroundColor: "#0D1E35", borderWidth: 1, borderColor: "#378ADD44", alignItems: "center", justifyContent: "center" },
+  botAvatar: { width: 34, height: 34, borderRadius: 9, backgroundColor: T.blueLo, borderWidth: 1, borderColor: "#378ADD44", alignItems: "center", justifyContent: "center" },
   authorRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   author: { fontSize: 13, fontWeight: "500", color: T.cream },
-  sourceBadge: { fontSize: 10, backgroundColor: "#0D1E35", color: "#85B7EB", borderWidth: 1, borderColor: "#378ADD44", borderRadius: 99, paddingHorizontal: 7, paddingVertical: 1, overflow: "hidden" },
+  sourceBadge: { fontSize: 10, backgroundColor: T.blueLo, color: T.blueHi, borderWidth: 1, borderColor: "#378ADD44", borderRadius: 99, paddingHorizontal: 7, paddingVertical: 1, overflow: "hidden" },
   officialBadge: { fontSize: 10, backgroundColor: T.tealLo, color: T.tealHi, borderWidth: 1, borderColor: T.teal, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 1, fontWeight: "500", overflow: "hidden" },
   youBadge: { fontSize: 10, color: T.amberHi },
   hood: { fontSize: 11, color: T.creamFaint, marginTop: 2 },

@@ -235,7 +235,7 @@ const s = StyleSheet.create({
   choiceHint: { fontSize: 11.5, lineHeight: 16, color: T.creamDim, marginTop: 3 },
 
   promise: { marginTop: 12, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface, fontSize: 12.5, lineHeight: 19, color: T.cream },
-  error: { marginTop: 10, fontSize: 12, color: "#E57373" },
+  error: { marginTop: 10, fontSize: 12, color: T.redHi },
 
   actions: { flexDirection: "row", gap: 8, marginTop: 12 },
   submit: { minHeight: 44, paddingHorizontal: 18, borderRadius: 8, backgroundColor: T.amber, alignItems: "center", justifyContent: "center" },

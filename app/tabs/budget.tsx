@@ -22,7 +22,7 @@ const lineKey = (muni: string, line: any) => `${muni}::${line.fcoa || line.label
 
 // Validated categorical slots (dataviz reference palette, dark steps) against
 // T.surface — do not reorder: the ordering is the CVD-safety mechanism.
-const SEG_COLORS = ["#3987E5", "#199E70", "#C98500", "#008300", "#9085E9"];
+const SEG_COLORS = ["#3987E5", T.teal, "#C98500", "#008300", "#9085E9"];
 
 const fmtUSD = (n: any, digits = 0) =>
   n == null ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: digits });
@@ -417,7 +417,7 @@ export default function BudgetScreen() {
         <Text style={s.sectionLabel}>HOW THE {fmtCompact(revTotal)} IS PAID FOR</Text>
         <View style={s.card}>
           {revenues.map((l) => (
-            <BarRow key={l.id} line={l} max={maxRev} color="#199E70"
+            <BarRow key={l.id} line={l} max={maxRev} color={T.teal}
               muni={budget.municipality_id} year={budget.year} section="revenues"
               shareOfTotal={revTotal > 0 ? Number(l.amount) / revTotal : null}
               yourShare={null} />

@@ -35,6 +35,7 @@ export const T = {
   tealHi: "#4CAF80",
   blue: "#378ADD",
   blueLo: "#0D1E35",
+  blueMid: "#185FA5",
   blueHi: "#85B7EB",
   purple: "#7F77DD",
   purpleLo: "#1A1835",
