@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ActivityIndicator, Alert,
-  TextInput, TouchableOpacity, FlatList,
+  TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView,
 } from "react-native";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
@@ -171,7 +171,10 @@ export default function OnboardingNeighborhood() {
   }
 
   return (
-    <View style={s.root}>
+    // The search field sits at the top so it is never covered itself, but the
+    // results list below it ran under the keyboard with no way to reach the
+    // lower rows. Padding ends the list above the keyboard instead.
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       <Text style={s.title}>Your neighborhood</Text>
       <Text style={s.sub}>
         We'll use your location to place you in the right civic community.
@@ -232,7 +235,7 @@ export default function OnboardingNeighborhood() {
           )}
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

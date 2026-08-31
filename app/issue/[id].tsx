@@ -1090,28 +1090,37 @@ export default function IssueDetail() {
 
       {/* I see this differently — bottom sheet */}
       <Modal visible={showDisagree} transparent animationType="slide" onRequestClose={() => setShowDisagree(false)}>
-        <Pressable style={s.sheetBackdrop} onPress={() => setShowDisagree(false)} />
-        <View style={s.sheetPanel}>
-          <View style={s.sheetHandle} />
-          <Text style={s.sheetTitle}>I see this differently</Text>
-          <Text style={s.sheetSub}>
-            Before registering your disagreement, tell us in one sentence what you think the people who support this position care about.
-          </Text>
-          <Text style={s.fieldHint}>What do supporters of this issue care about? <Text style={{ color: T.amberHi }}>{recognition.length}/300</Text></Text>
-          <TextInput style={[s.stakeInput, { minHeight: 80 }]} multiline value={recognition} maxLength={300}
-            placeholder="e.g. They care about pedestrian safety and reducing traffic risk near the school…"
-            placeholderTextColor={T.creamFaint} onChangeText={setRecognition} />
-          <Text style={s.sheetNote}>
-            Your disagreement and this recognition will both be shown. The most thoughtful perspectives are surfaced first.
-          </Text>
-          <Pressable onPress={submitDisagreement} disabled={recognition.trim().length < 50 || submittingD}
-            style={[s.sheetBtn, recognition.trim().length < 50 && s.disabled]}>
-            <Text style={s.sheetBtnText}>{submittingD ? "Submitting…" : "Register my perspective"}</Text>
-          </Pressable>
-          {recognition.trim().length < 50 && recognition.length > 0 && (
-            <Text style={s.sheetHint}>Keep going — a bit more context helps ({50 - recognition.trim().length} more characters)</Text>
-          )}
-        </View>
+        {/* A Modal renders in its own view hierarchy, so the screen-level
+            KeyboardAvoidingView at the top of this file does not reach inside
+            it — this sheet needs its own. Without it the recognition field and
+            the submit button both sat under the keyboard, on a step that asks
+            for at least 50 characters. Same shape as budget.tsx's raise sheet:
+            a flex:1 wrapper ending in flex-end, with the panel as a flow child
+            so the padding actually moves it. */}
+        <KeyboardAvoidingView behavior="padding" style={s.sheetWrap}>
+          <Pressable style={s.sheetBackdrop} onPress={() => setShowDisagree(false)} />
+          <View style={s.sheetPanel}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>I see this differently</Text>
+            <Text style={s.sheetSub}>
+              Before registering your disagreement, tell us in one sentence what you think the people who support this position care about.
+            </Text>
+            <Text style={s.fieldHint}>What do supporters of this issue care about? <Text style={{ color: T.amberHi }}>{recognition.length}/300</Text></Text>
+            <TextInput style={[s.stakeInput, { minHeight: 80 }]} multiline value={recognition} maxLength={300}
+              placeholder="e.g. They care about pedestrian safety and reducing traffic risk near the school…"
+              placeholderTextColor={T.creamFaint} onChangeText={setRecognition} />
+            <Text style={s.sheetNote}>
+              Your disagreement and this recognition will both be shown. The most thoughtful perspectives are surfaced first.
+            </Text>
+            <Pressable onPress={submitDisagreement} disabled={recognition.trim().length < 50 || submittingD}
+              style={[s.sheetBtn, recognition.trim().length < 50 && s.disabled]}>
+              <Text style={s.sheetBtnText}>{submittingD ? "Submitting…" : "Register my perspective"}</Text>
+            </Pressable>
+            {recognition.trim().length < 50 && recognition.length > 0 && (
+              <Text style={s.sheetHint}>Keep going — a bit more context helps ({50 - recognition.trim().length} more characters)</Text>
+            )}
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {toast && (
@@ -1256,8 +1265,9 @@ const s = StyleSheet.create({
   composeSend: { backgroundColor: T.amber, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
   composeSendText: { color: T.bg, fontSize: 13, fontWeight: "500" },
 
-  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)" },
-  sheetPanel: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: T.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderTopWidth: 1, borderColor: T.border, padding: 20, paddingBottom: 36 },
+  sheetWrap: { flex: 1, justifyContent: "flex-end" },
+  sheetBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.65)" },
+  sheetPanel: { backgroundColor: T.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderTopWidth: 1, borderColor: T.border, padding: 20, paddingBottom: 36 },
   sheetHandle: { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginBottom: 16 },
   sheetTitle: { fontSize: 17, color: T.cream, marginBottom: 6, fontWeight: "600" },
   sheetSub: { fontSize: 12, color: T.creamDim, lineHeight: 19, marginBottom: 14 },

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable,
-  TextInput, Alert, ActivityIndicator,
+  TextInput, Alert, ActivityIndicator, KeyboardAvoidingView,
 } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import YourIssuesScreen from "./issues";
@@ -392,7 +392,10 @@ export default function ProfileScreen() {
   const next = nextTier(score);
 
   return (
-    <View style={s.root}>
+    // The route/commute fields sit near the bottom of a long scroll and had no
+    // keyboard avoidance of any kind — under edge-to-edge nothing resizes, so
+    // focusing one put it straight behind the keyboard.
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       {/* Header + tabs */}
       <View style={s.head}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -705,7 +708,7 @@ export default function ProfileScreen() {
 
       {/* Tracker — the round-trip ledger, folded into Me (mirrors web) */}
       {activeTab === "tracker" && <YourIssuesScreen />}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

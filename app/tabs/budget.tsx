@@ -8,7 +8,7 @@
 // → one hue, direct value labels in text ink. No hover on a phone — tapping
 // a segment or line shows the exact-figures readout instead.
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
@@ -434,7 +434,7 @@ export default function BudgetScreen() {
 
       {/* Raise-a-question composer */}
       <Modal visible={!!raise} transparent animationType="slide" onRequestClose={() => !submitting && setRaise(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.modalWrap}>
+        <KeyboardAvoidingView behavior="padding" style={s.modalWrap}>
           <Pressable style={s.modalBackdrop} onPress={() => !submitting && setRaise(null)} />
           <View style={s.sheet}>
             <Text style={s.sheetKicker}>RAISE A QUESTION</Text>
