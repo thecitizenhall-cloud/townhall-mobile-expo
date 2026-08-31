@@ -104,53 +104,70 @@ export default function OnboardingNeighborhood() {
 
   async function selectNeighborhood(hood: Neighborhood) {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    // try/finally, not a bare setSaving(false) before the navigation: the
+    // primary button renders a spinner while `saving` and carries
+    // disabled={saving}, so ANY early return or throw below used to strand the
+    // resident on the first write of onboarding with a spinner that never
+    // stopped, no message and no way to retry.
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Session expired", "Please sign in again.");
+        router.replace("/auth/login");
+        return;
+      }
 
-    // B3: resolve the resident's election district LOCALLY from GPS (point-in-
-    // polygon on device — location never sent out); store only the district id.
-    let district_id: string | null = null;
-    if (coords?.lat != null && coords?.lng != null) {
-      try { district_id = (await detectDistrict(coords.lat, coords.lng))?.id ?? null; } catch {}
+      // B3: resolve the resident's election district LOCALLY from GPS (point-in-
+      // polygon on device — location never sent out); store only the district id.
+      let district_id: string | null = null;
+      if (coords?.lat != null && coords?.lng != null) {
+        try { district_id = (await detectDistrict(coords.lat, coords.lng))?.id ?? null; } catch {}
+      }
+
+      // upsert, not update: if the signup trigger ever failed to create the
+      // profiles row, update() matches 0 rows silently and the resident bounces
+      // back to onboarding forever (same footgun web's OnboardingScreen guards).
+      await supabase.from("profiles").upsert({
+        id: user.id,
+        neighborhood_id: hood.id,
+        neighborhood: hood.name,
+      });
+      // District goes to its own table (migration 106), never onto profiles —
+      // profiles is anon-readable in full. Kept OUT of the upsert above so a
+      // district failure can never take onboarding's neighborhood write with it.
+      await setMyDistrictId(user.id, district_id);
+
+      if (verify !== "1") {
+        // Initial onboarding: neighborhood_id is now saved, so enter and read.
+        // ZK runs just-in-time (goVerify → here with ?verify=1) the first time
+        // the resident votes/stakes/escalates. welcome.tsx sets onboarded=true.
+        router.replace("/onboarding/welcome");
+        return;
+      }
+
+      // On-demand verification → run the ZK proof. Pass coords to the next step.
+      router.push({
+        pathname: "/onboarding/zk-proof",
+        params: {
+          neighborhoodId: hood.id,
+          neighborhoodName: hood.name,
+          // cityId, not municipalityId: this is neighborhoods.city_id, a uuid FK
+          // to cities. The engine's municipality_id is a TEXT key ("jackson_nj")
+          // that lives on neighborhood_scores / concern_cards. A uuid in a slot
+          // named municipality_id matches zero rows instead of erroring — if a
+          // real one is ever wanted here, derive it from the neighborhood slug
+          // prefix the way tabs/feed.tsx and pages/api/civic-feed.js do.
+          cityId: hood.city_id,
+          // Fallback chain mirrors web: real GPS → neighborhood center → Jackson.
+          // A proof built on the neighborhood center still verifies (the center is
+          // inside the boundary) — fine for town-level residency when GPS is denied.
+          lat: (coords?.lat ?? hood.center_lat ?? JACKSON_LAT).toString(),
+          lng: (coords?.lng ?? hood.center_lng ?? JACKSON_LNG).toString(),
+        },
+      });
+    } finally {
+      setSaving(false);
     }
-
-    // upsert, not update: if the signup trigger ever failed to create the
-    // profiles row, update() matches 0 rows silently and the resident bounces
-    // back to onboarding forever (same footgun web's OnboardingScreen guards).
-    await supabase.from("profiles").upsert({
-      id: user.id,
-      neighborhood_id: hood.id,
-      neighborhood: hood.name,
-    });
-    // District goes to its own table (migration 106), never onto profiles —
-    // profiles is anon-readable in full. Kept OUT of the upsert above so a
-    // district failure can never take onboarding's neighborhood write with it.
-    await setMyDistrictId(user.id, district_id);
-
-    setSaving(false);
-
-    if (verify !== "1") {
-      // Initial onboarding: neighborhood_id is now saved, so enter and read.
-      // ZK runs just-in-time (goVerify → here with ?verify=1) the first time
-      // the resident votes/stakes/escalates. welcome.tsx sets onboarded=true.
-      router.replace("/onboarding/welcome");
-      return;
-    }
-
-    // On-demand verification → run the ZK proof. Pass coords to the next step.
-    router.push({
-      pathname: "/onboarding/zk-proof",
-      params: {
-        neighborhoodId: hood.id,
-        neighborhoodName: hood.name,
-        municipalityId: hood.city_id,
-        // Fallback chain mirrors web: real GPS → neighborhood center → Jackson.
-        // A proof built on the neighborhood center still verifies (the center is
-        // inside the boundary) — fine for town-level residency when GPS is denied.
-        lat: (coords?.lat ?? hood.center_lat ?? JACKSON_LAT).toString(),
-        lng: (coords?.lng ?? hood.center_lng ?? JACKSON_LNG).toString(),
-      },
-    });
   }
 
   return (

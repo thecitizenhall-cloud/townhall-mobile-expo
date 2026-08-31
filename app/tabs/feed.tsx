@@ -119,7 +119,6 @@ export default function FeedScreen() {
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [districtCards, setDistrictCards] = useState<CivicItem[]>([]);
   // TOWN-WIDE counts from town_feed, never measured off the loaded array.
   const [feedCounts, setFeedCounts] = useState<FeedCounts>({ ...EMPTY_COUNTS });
   const [bandFilter, setBandFilter] = useState<FeedFilter>("all");
@@ -267,11 +266,11 @@ export default function FeedScreen() {
 
       setVerified(verified);
       // Council cards first, then whatever the route still supplies. town_feed
-      // already led with the resident's election district, so the district set
-      // is read off its own answer rather than fetched a second time.
+      // already leads with the resident's election district, and every item
+      // carries _inDistrict (townFeed.ts:69), which CivicFeedItem renders as
+      // the badge — so there is no separate district list to hold in state.
       setCivic([...council.items, ...civicItems]);
       setFeedCounts(council.counts);
-      setDistrictCards(council.items.filter((c) => c._inDistrict));
       setIssues(issRes.data || []);
       setWatchedIds(new Set([
         ...((wiRes.data || []).map((w: any) => w.issue_id).filter(Boolean)),
@@ -438,7 +437,6 @@ export default function FeedScreen() {
         if (cancelled) return;
         setFeedCounts(res.counts);
         setCivic((prev) => [...res.items, ...prev.filter((c) => c.source !== "civic_engine")]);
-        setDistrictCards(res.items.filter((c) => c._inDistrict));
       })
       .finally(() => { if (!cancelled) setBandLoading(false); });
     return () => { cancelled = true; };

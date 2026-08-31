@@ -38,7 +38,7 @@ export default function OnboardingZKProof() {
   const params = useLocalSearchParams<{
     neighborhoodId: string;
     neighborhoodName: string;
-    municipalityId: string;
+    cityId: string;
     lat: string;
     lng: string;
   }>();
