@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
-  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Platform,
+  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView,
 } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -653,12 +653,26 @@ export default function FeedScreen() {
 
   const neighborhood = profile?.neighborhood || "your town";
 
-  // Android already resizes the window for the keyboard (adjustResize is the Expo
-  // default); layering behavior="padding" on top double-avoids and left the fixed
-  // Post composer under the keyboard when switching Report→Post. Use padding on
-  // iOS only and let Android's native resize do the work.
+  // behavior="padding" on BOTH platforms, and the compose bar below is a flow
+  // child rather than an absolute one. Together those are what actually keep the
+  // typing area above the keyboard.
+  //
+  // The old comment here said Android resizes the window itself (adjustResize)
+  // so padding would double-avoid. That was true before edge-to-edge. Under
+  // edge-to-edge — on by default since SDK 53, unavoidable on SDK 54+ targeting
+  // Android 15, and the reason app/_layout.tsx pads insets.bottom globally — the
+  // window no longer resizes for the keyboard; only the insets change. So
+  // behavior={undefined} left Android with NO avoidance at all and the composer
+  // sat under the keyboard.
+  //
+  // The absolute positioning was the second half of the bug: whether a parent's
+  // padding moves an absolutely-positioned child depends on whether the
+  // containing block is the padding box or the content box, which has changed
+  // across Yoga versions. A flow child is unambiguous — and it is what
+  // card/[id].tsx, issue/[id].tsx and CommentKit already do, on the screens
+  // where the keyboard has always behaved.
   return (
-    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={s.root} behavior="padding">
       <FlatList
         style={s.root}
         contentContainerStyle={s.content}
@@ -919,7 +933,9 @@ export default function FeedScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center" },
-  content: { paddingBottom: 200 },
+  // Was 200: clearance for a compose bar that used to overlay the list. The bar
+  // now takes its own space in the column, so the list only needs breathing room.
+  content: { paddingBottom: 16 },
   header: { paddingHorizontal: 16, paddingTop: 16, marginBottom: 12 },
   loadErr: { marginHorizontal: 16, marginTop: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
   loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
@@ -950,7 +966,8 @@ const s = StyleSheet.create({
   empty: { padding: 40, alignItems: "center" },
   emptyText: { color: T.creamDim, fontSize: 14, textAlign: "center", lineHeight: 22 },
 
-  composeBar: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, backgroundColor: T.bg },
+  // Flow child, not absolute — see the KeyboardAvoidingView comment above.
+  composeBar: { padding: 12, backgroundColor: T.bg },
   composeTap: { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 14 },
   composeTapText: { flex: 1, color: T.creamDim, fontSize: 13 },
   modeChip: { borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 },
