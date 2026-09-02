@@ -41,6 +41,16 @@ function dateLabel(item: any): string {
   return heard || seen || "";
 }
 
+// One colour per band, from the existing palette. Deliberately not five
+// accents: only the two that ask something of the resident — a question you
+// asked came back, a matter past its own stated date — carry weight. A feed
+// where everything is highlighted highlights nothing.
+function bandColor(band: number): string {
+  if (band === 0) return T.tealHi;
+  if (band === 3) return T.amberHi;
+  return T.creamFaint;
+}
+
 export default function CivicFeedItem({ item, onPress }: Props) {
   const isAlert = item.source === "noaa";
   const label = SOURCE_LABEL[item.source] ?? item.source;
@@ -61,6 +71,20 @@ export default function CivicFeedItem({ item, onPress }: Props) {
           </View>
         )}
       </View>
+
+      {/* WHY this matter is in front of you. town_feed computes the band and
+          the sentence together so the badge can never state a different reason
+          than the one that ranked the card, so this prints the server's words
+          rather than deriving its own. Band 5 is the resting state — announcing
+          "On the public record" on every card would be noise. */}
+      {(item as any)._bandReason != null && (item as any)._band != null && (item as any)._band < 5 && (
+        <View style={s.bandRow}>
+          <View style={[s.bandDot, { backgroundColor: bandColor((item as any)._band) }]} />
+          <Text style={[s.bandText, { color: bandColor((item as any)._band) }]} numberOfLines={1}>
+            {(item as any)._bandReason}
+          </Text>
+        </View>
+      )}
 
       <Text style={s.title} numberOfLines={3}>{item.title}</Text>
 
@@ -115,6 +139,9 @@ const s = StyleSheet.create({
     backgroundColor: T.tealLo, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
   outcomeText: { color: T.teal, fontSize: 10, fontWeight: "600" },
+  bandRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  bandDot: { width: 5, height: 5, borderRadius: 2.5 },
+  bandText: { fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase" },
   title: { color: T.cream, fontSize: 15, fontWeight: "500", lineHeight: 22, marginBottom: 8 },
   body: { color: T.creamDim, fontSize: 13, lineHeight: 20, marginBottom: 10 },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
