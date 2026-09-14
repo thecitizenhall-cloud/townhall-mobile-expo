@@ -33,6 +33,9 @@ function outcomeLabel(signal?: string | null): string {
     case "denied":
     case "rejected": return "❌ Not approved";
     case "deferred": return "⏸️ Deferred for another review";
+    // 107: an announcement is not a decision state, so it must not fall into
+    // the pending default and claim a vote is coming.
+    case "announced": return "📣 For information";
     default:         return "⏳ Decision pending";
   }
 }

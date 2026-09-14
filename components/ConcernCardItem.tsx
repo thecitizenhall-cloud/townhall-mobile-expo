@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { T } from "../lib/theme";
 import { councilLabel } from "../lib/cardArea";
+import { outcomeFor } from "../lib/outcome";
 import type { ConcernCard } from "../lib/supabase";
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
 
 export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
   const hasOutcome = !!card.outcome_signal;
+  const outcome = outcomeFor(card.outcome_signal);
   const quote = card.source_quote ?? card.quote;
   const summary = card.summary ?? card.body;
   const dateStr = card.meeting_date ?? card.created_at;
@@ -20,8 +22,8 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
       <View style={s.header}>
         <Text style={s.source}>{(card.source_label || councilLabel(card.municipality_id)).toUpperCase()}</Text>
         {hasOutcome && (
-          <View style={s.outcomePill}>
-            <Text style={s.outcomeText}>Outcome: {card.outcome_signal}</Text>
+          <View style={[s.outcomePill, { backgroundColor: outcome.bg }]}>
+            <Text style={[s.outcomeText, { color: outcome.color }]}>{outcome.label}</Text>
           </View>
         )}
       </View>
@@ -58,10 +60,12 @@ const s = StyleSheet.create({
     color: T.amberHi, fontSize: 10, fontWeight: "600",
     letterSpacing: 0.8, flexShrink: 1,
   },
+  // Neutral defaults; outcomeFor() supplies the real colours inline. They must
+  // not be the approval colours -- that is the bug this replaced.
   outcomePill: {
-    backgroundColor: T.tealLo, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: T.surface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
-  outcomeText: { color: T.teal, fontSize: 10, fontWeight: "600" },
+  outcomeText: { color: T.creamDim, fontSize: 10, fontWeight: "600" },
   title: { color: T.cream, fontSize: 15, fontWeight: "500", lineHeight: 22, marginBottom: 8 },
   quote: {
     color: T.creamDim, fontSize: 13, lineHeight: 20, fontStyle: "italic",
