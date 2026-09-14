@@ -15,18 +15,19 @@ import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
 import { SITE_URL } from "../../lib/config";
 import CommentKit, { KitComment, Stance } from "../../components/CommentKit";
 import StandingQuestions from "../../components/StandingQuestions";
+import { outcomeFor } from "../../lib/outcome";
 
-const OUTCOME_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  pending: { label: "Pending vote", color: T.amberHi, bg: T.amberLo },
-  // Not a decision state — nothing will be voted on. Mirrors web's
-  // ConcernCardDetailScreen (migration 107).
-  announced: { label: "For information", color: T.creamDim, bg: T.surface },
-  approved: { label: "Approved", color: T.tealHi, bg: T.tealLo },
-  rejected: { label: "Rejected", color: T.redHi, bg: T.redLo },
-  tabled: { label: "Tabled", color: T.creamDim, bg: T.surface },
-  discussed: { label: "Under discussion", color: T.blueHi, bg: T.blueLo },
-  introduced: { label: "Introduced", color: T.purpleHi, bg: T.purpleLo },
-};
+// Moved to lib/outcome.ts so the two feed components render the same vocabulary
+// instead of printing the raw enum in approval green. That move also added the
+// `denied` and `deferred` the engine actually emits: both used to miss this map
+// and fall back to `pending`, so a REFUSED application read "Pending vote".
+//
+// '%' and '_' are LIKE metacharacters and both are ordinary in municipal card
+// titles ("20% Density Bonus", "Ordinance 2026-07_Rev"). Left unescaped in the
+// related-cards pattern below, the middle of the pattern becomes a wildcard and
+// the timeline that should show one matter across meetings shows unrelated
+// cards — or, with '_', something plausible and wrong, which is worse.
+const escapeLike = (v: string) => v.replace(/[\\%_]/g, (m) => "\\" + m);
 
 const IMPACT_LABELS: Record<string, string> = {
   budget: "💰 Budget", zoning: "🏛 Zoning", traffic: "🚦 Traffic", environment: "🌿 Environment",
@@ -140,7 +141,7 @@ export default function ConcernCardDetail() {
         supabase.from("concern_cards")
           .select("id, meeting_date, source_url, pass1_confidence, outcome_signal, meeting_id, meetings(meeting_type)")
           .eq("municipality_id", c.municipality_id)
-          .ilike("title", `%${c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30)}%`)
+          .ilike("title", `%${escapeLike(c.title?.split("–")[0]?.split("—")[0]?.trim().slice(0, 30) ?? "")}%`)
           .order("meeting_date", { ascending: true }),
         u
           ? supabase.from("card_watches")
@@ -291,7 +292,7 @@ export default function ConcernCardDetail() {
     );
   }
 
-  const outcome = OUTCOME_LABELS[card.outcome_signal] || OUTCOME_LABELS.pending;
+  const outcome = outcomeFor(card.outcome_signal ?? "pending");
   const impact = IMPACT_LABELS[card.impact_type] || "📋 Civic";
 
   // Only actual comments on the card belong in the comment section. Related feed
@@ -382,7 +383,7 @@ export default function ConcernCardDetail() {
               </Text>
               <View style={s.timeline}>
                 {meetings.map((m, i) => {
-                  const mo = OUTCOME_LABELS[m.outcome_signal] || OUTCOME_LABELS.pending;
+                  const mo = outcomeFor(m.outcome_signal ?? "pending");
                   const last = i === meetings.length - 1;
                   return (
                     <View key={m.id} style={s.meetingRow}>
@@ -515,7 +516,7 @@ export default function ConcernCardDetail() {
           <View style={{ marginTop: 8 }}>
             <Text style={s.sectionHead}>Related civic items</Text>
             {relatedCards.map((rc) => {
-              const ro = OUTCOME_LABELS[rc.outcome_signal] || OUTCOME_LABELS.pending;
+              const ro = outcomeFor(rc.outcome_signal ?? "pending");
               return (
                 <Pressable key={rc.id} style={s.relatedCard} onPress={() => router.push({ pathname: "/card/[id]", params: { id: rc.id } })}>
                   <Text style={s.relatedKind}>{rc.source_url?.includes("seeclickfix") ? "311 Report" : "Council item"}</Text>

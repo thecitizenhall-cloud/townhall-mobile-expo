@@ -21,6 +21,10 @@ const STATUS_META: Record<string, { bg: string; color: string; label: string }> 
 const OUTCOME_LABEL: Record<string, string> = {
   pending: "Pending", introduced: "Introduced", deferred: "Deferred",
   approved: "Approved", denied: "Denied", discussed: "Discussed", tabled: "Tabled",
+  // Without this a reclassified card renders as a MOVED row reading the bare
+  // enum "announced". Migration 113 now stops 'announced' raising a moved
+  // notification at all, but rows written before it can still reach here.
+  announced: "For information",
 };
 
 // A single issue row, reused across the "following", "since last visit", and

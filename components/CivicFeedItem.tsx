@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { T } from "../lib/theme";
+import { outcomeFor } from "../lib/outcome";
 import type { CivicItem } from "../lib/supabase";
 
 type Props = {
@@ -65,11 +66,14 @@ export default function CivicFeedItem({ item, onPress }: Props) {
         <Text style={[s.source, isAlert && s.sourceAlert]}>
           {label.toUpperCase()}
         </Text>
-        {item.outcome_signal && (
-          <View style={s.outcomePill}>
-            <Text style={s.outcomeText}>Outcome: {item.outcome_signal}</Text>
-          </View>
-        )}
+        {item.outcome_signal && (() => {
+          const outcome = outcomeFor(item.outcome_signal);
+          return (
+            <View style={[s.outcomePill, { backgroundColor: outcome.bg }]}>
+              <Text style={[s.outcomeText, { color: outcome.color }]}>{outcome.label}</Text>
+            </View>
+          );
+        })()}
       </View>
 
       {/* WHY this matter is in front of you. town_feed computes the band and
@@ -135,10 +139,11 @@ const s = StyleSheet.create({
   // T.red is 3.00:1 to 3.55:1 — fine for a border or a fill, under 4.5:1 as
   // text. redHi (5.46:1 worst) is the text-safe member of the pair.
   sourceAlert: { color: T.redHi },
+  // Neutral defaults; outcomeFor() supplies the real colours inline.
   outcomePill: {
-    backgroundColor: T.tealLo, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: T.surface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
   },
-  outcomeText: { color: T.teal, fontSize: 10, fontWeight: "600" },
+  outcomeText: { color: T.creamDim, fontSize: 10, fontWeight: "600" },
   bandRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
   bandDot: { width: 5, height: 5, borderRadius: 2.5 },
   bandText: { fontSize: 10.5, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase" },

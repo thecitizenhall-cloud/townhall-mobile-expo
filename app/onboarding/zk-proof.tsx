@@ -55,11 +55,17 @@ export default function OnboardingZKProof() {
   // listener would miss the subsequent injectJavaScript dispatch.
   const injectedJS = `
     (function() {
-      window.TOWNHALL_ZK_PARAMS = {
-        lat: ${parseFloat(params.lat) || 0},
-        lng: ${parseFloat(params.lng) || 0},
-        neighborhoodId: "${params.neighborhoodId}",
-      };
+      // JSON.stringify, not interpolation. lat/lng were laundered through
+      // parseFloat but neighborhoodId went in raw, and expo-router makes every
+      // route deep-linkable under the "townhallcafe" scheme (app.json), so a
+      // crafted link could close the string literal and run its own JavaScript
+      // inside a WebView whose origin is the live site -- owning the
+      // postMessage bridge handleMessage trusts below.
+      window.TOWNHALL_ZK_PARAMS = ${JSON.stringify({
+        lat: parseFloat(params.lat) || 0,
+        lng: parseFloat(params.lng) || 0,
+        neighborhoodId: String(params.neighborhoodId ?? ""),
+      })};
     })();
     true;
   `;
@@ -79,7 +85,15 @@ export default function OnboardingZKProof() {
       if (msg.type === "proof_generated") {
         setStatusMsg("Verifying proof on server…");
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        // Not a bare return. status is already "proving", so returning here
+        // leaves the resident on a spinner that never stops: the idle and error
+        // blocks are both unmounted, there is no timeout, and their proof was
+        // never submitted, so they gain no standing either. getUser() is a
+        // network round trip that returns null on a transient failure or an
+        // expired session -- a realistic state mid-onboarding. Throw into the
+        // catch below, which renders the retry path. neighborhood.tsx already
+        // wraps its own write in try/finally for exactly this reason.
+        if (!user) throw new Error("You're signed out — sign in and try again.");
 
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`${SUPABASE_URL}/functions/v1/zk-verify`, {
@@ -102,7 +116,14 @@ export default function OnboardingZKProof() {
 
         setStatus("done");
         setStatusMsg("Residency verified!");
-        await recordAttestation(params.neighborhoodName);
+        // The proof is verified and the screen already says so. An attestation
+        // write failing here must not flip a verified resident to "Something
+        // went wrong".
+        try {
+          await recordAttestation(params.neighborhoodName);
+        } catch (attestErr) {
+          console.warn("[zk] attestation record failed after verification:", attestErr);
+        }
         seedWatchers(params.neighborhoodId, session?.access_token, user.id); // deliberately not awaited
         router.replace("/onboarding/welcome");
         return;
