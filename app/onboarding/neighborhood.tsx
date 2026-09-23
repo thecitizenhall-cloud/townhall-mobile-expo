@@ -127,11 +127,22 @@ export default function OnboardingNeighborhood() {
       // upsert, not update: if the signup trigger ever failed to create the
       // profiles row, update() matches 0 rows silently and the resident bounces
       // back to onboarding forever (same footgun web's OnboardingScreen guards).
-      await supabase.from("profiles").upsert({
+      const { error: profileErr } = await supabase.from("profiles").upsert({
         id: user.id,
         neighborhood_id: hood.id,
         neighborhood: hood.name,
       });
+      // Checked, not fire-and-forget. This write can fail on a flaky
+      // connection, or on migration 055's enforce_neighborhood_change_cooldown
+      // raising on the UPDATE arm when a resident re-enters via ?verify=1
+      // within 30 days of a previous change. Unchecked, it carried the resident
+      // to the next screen believing their town was set while neighborhood_id
+      // stayed null — and welcome.tsx then stamped onboarded=true over it.
+      // Web's OnboardingScreen.jsx stays put on this error; match it.
+      if (profileErr) {
+        Alert.alert("Couldn't save your neighborhood", profileErr.message);
+        return;
+      }
       // District goes to its own table (migration 106), never onto profiles —
       // profiles is anon-readable in full. Kept OUT of the upsert above so a
       // district failure can never take onboarding's neighborhood write with it.

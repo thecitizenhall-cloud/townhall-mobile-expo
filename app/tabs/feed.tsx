@@ -233,8 +233,21 @@ export default function FeedScreen() {
       })();
 
       // Resident posts (with author profile), scoped to the neighborhood.
-      // No removed_at/hidden_at filter — those columns don't exist in the live
-      // schema; post visibility is enforced by RLS, matching the web TownScreen.
+      //
+      // posts.removed_at EXISTS (migration 051 adds it and indexes it), and
+      // posts RLS DOES enforce it: 053 dropped the baseline's
+      // `posts_public_read ... using (true)` and recreated it as
+      // `using (removed_at is null)`. No later migration touches that policy.
+      // So the .is("removed_at", null) below is defence in depth, not the only
+      // guard — a previous comment here claimed the columns don't exist, which
+      // would have invited someone to delete the filter, and an audit finding
+      // then claimed 053 skipped posts, which would have invited the opposite
+      // error of treating the client filter as load-bearing. Neither is true.
+      //
+      // It does NOT match the web TownScreen: web uses
+      // `.or("removed_at.is.null,author_id.eq.<uid>")`, so an author still sees
+      // their own removed post; this hides it from the author too. Minor, but
+      // real — don't cite web as the precedent for this line.
       let postQ = supabase.from("posts")
         .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
         .is("removed_at", null)
