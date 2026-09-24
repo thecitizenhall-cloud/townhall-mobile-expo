@@ -104,6 +104,10 @@ export default function FeedScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+  // The realtime subscription is created once, so it reads the profile
+  // through a ref rather than a stale closure.
+  const profileRef = useRef<any>(null);
+  profileRef.current = profile;
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isFirstSession, setIsFirstSession] = useState(false);
   // Onboarding stamps first_session_completed_at before routing here, so the
@@ -170,7 +174,14 @@ export default function FeedScreen() {
       .channel("feed-posts")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, async (payload: any) => {
         const { data } = await supabase.from("posts").select("*, profiles(display_name,neighborhood,is_bot,is_official)").eq("id", payload.new.id).maybeSingle();
-        if (data) setPosts((prev) => (prev.some((p) => p.id === data.id) ? prev : dedupeSyncedPosts([data, ...prev])));
+        if (!data) return;
+        // Only this resident's neighborhood, or the town's general one (web
+        // migration 120). Mirrors web TownScreen's realtime filter; this handler
+        // used to accept posts from every neighborhood in every town.
+        const own = profileRef.current?.neighborhood_id;
+        if (own && data.neighborhood_id && data.neighborhood_id !== own
+            && data.neighborhood_id !== await getGeneralNeighborhoodId(own)) return;
+        setPosts((prev) => (prev.some((p) => p.id === data.id) ? prev : dedupeSyncedPosts([data, ...prev])));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "posts" }, (payload: any) => {
         setPosts((prev) => prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p)));

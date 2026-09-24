@@ -2,7 +2,7 @@
 // general_neighborhood_of rpc (web migration 120) — the one place that rule
 // lives. civic-sync posts town-wide items (agendas, bulletins, NOAA alerts)
 // there once, so a feed of "posts in my neighborhood" must read it too.
-// Mirror of newclaudeversion/lib/generalNeighborhood.js — change both together.
+// Mirror of the web app's lib/generalNeighborhood.js — change both together.
 //
 // Never throws. Before 120 is applied, or on any error, it answers null and the
 // caller reads its own neighborhood only, which is exactly the old behaviour.
