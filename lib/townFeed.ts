@@ -85,7 +85,7 @@ export async function loadTownFeed(
   slug: string | null,
   { filter = "all", limit = 20, offset = 0 }:
     { filter?: FeedFilter; limit?: number; offset?: number } = {},
-): Promise<{ items: CivicItem[]; counts: FeedCounts; hasMore: boolean; note: string | null }> {
+): Promise<{ items: CivicItem[]; counts: FeedCounts; hasMore: boolean; note: string | null; error: string | null }> {
   const { data, error } = await supabase.rpc("town_feed", {
     p_slug: slug,
     p_filter: filter,
@@ -93,13 +93,19 @@ export async function loadTownFeed(
     p_offset: offset,
   });
   if (error || !data) {
-    return { items: [], counts: { ...EMPTY_COUNTS }, hasMore: false,
-             note: error?.message ?? "town_feed returned nothing." };
+    // `error` is kept separate from `note`, as on web (townScreenData.js): a
+    // failure has to reach the caller as a failure, whereas the RPC's own note
+    // ("No neighborhood resolved") is a legitimate empty state. Folded into
+    // `note`, which nothing read, a failed load was indistinguishable from a
+    // town with nothing on its record.
+    return { items: [], counts: { ...EMPTY_COUNTS }, hasMore: false, note: null,
+             error: error?.message ?? "town_feed returned nothing." };
   }
   return {
     items: (data.cards || []).map(cardToCivicItem),
     counts: { ...EMPTY_COUNTS, ...(data.counts || {}) },
     hasMore: !!data.has_more,
     note: data.note ?? null,
+    error: null,
   };
 }
