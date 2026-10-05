@@ -9,6 +9,10 @@ import * as Location from "expo-location";
 import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
+
+// Shown when town_feed itself fails. Without it an empty result from a failed
+// call reads as a quiet town.
+const RECORD_LOAD_ERROR = "Couldn't load the town record — pull down to refresh.";
 import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNeighborhood";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
@@ -298,6 +302,10 @@ export default function FeedScreen() {
       ]);
 
       setVerified(verified);
+      if (council.error) {
+        console.warn("town_feed failed:", council.error);
+        setLoadError(RECORD_LOAD_ERROR);
+      }
       // Council cards first, then whatever the route still supplies. town_feed
       // already leads with the resident's election district, and every item
       // carries _inDistrict (townFeed.ts:69), which CivicFeedItem renders as
@@ -469,6 +477,14 @@ export default function FeedScreen() {
     loadTownFeed(neighborhoodSlug, { filter: bandFilter, limit: 20 })
       .then((res) => {
         if (cancelled) return;
+        // Keep what is on screen: replacing it with a failed call's empty
+        // result would show this band as having nothing in it.
+        if (res.error) {
+          console.warn("town_feed failed:", res.error);
+          setLoadError(RECORD_LOAD_ERROR);
+          return;
+        }
+        setLoadError(null);
         setFeedCounts(res.counts);
         setFeedHasMore(res.hasMore);
         setCivic((prev) => [...res.items, ...prev.filter((c) => c.source !== "civic_engine")]);
@@ -612,6 +628,12 @@ export default function FeedScreen() {
       const more = await loadTownFeed(neighborhoodSlug, {
         filter: bandFilter, limit: 20, offset: held.length,
       });
+      // Leave counts and hasMore alone so scrolling again can retry.
+      if (more.error) {
+        console.warn("town_feed failed:", more.error);
+        setLoadError(RECORD_LOAD_ERROR);
+        return;
+      }
       const have = new Set(held.map((c) => c.external_id));
       const fresh = more.items.filter((c) => !have.has(c.external_id));
       setCivic((prev) => [...prev, ...fresh]);
