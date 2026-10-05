@@ -10,6 +10,7 @@ import { getCurrentUser } from "../../lib/sessionUser";
 import { reservedNameError } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
+import { municipalityForSlug } from "../../lib/townOf";
 import { timeAgo } from "../../lib/format";
 import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } from "../../lib/push";
 import { SITE_URL } from "../../lib/config";
@@ -181,8 +182,8 @@ export default function ProfileScreen() {
 
       // municipality_id for route_watches — derived from the slug, same
       // approach as web (not a possibly-unset profiles column).
-      const prefix = hoodRes.data?.slug?.split("-")[0];
-      if (prefix) setMuniId(`${prefix}_nj`);
+      const muni = await municipalityForSlug(hoodRes.data?.slug);
+      if (muni) setMuniId(muni);
       loadRoutes(user.id);
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
