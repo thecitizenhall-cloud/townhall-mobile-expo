@@ -198,9 +198,14 @@ export default function YourIssuesScreen() {
       // neighborhood_scores needs the slug from phase 2, so it can't join the
       // batch above. Skipped entirely when the resident already watches cards.
       if (hoodData?.slug && !watchedCardData.length) {
+        // `!inner`, or the card filters only null out the embed and the dead
+        // rows still take the five slots — see lib/concernCards.ts. Most of a
+        // town's high-score rows point at archived or unsurfaced cards, so
+        // without it this section usually came back empty.
         const { data: scored } = await supabase.from("neighborhood_scores")
-          .select("relevance_score, concern_cards(*)").eq("neighborhood_id", hoodData.slug)
+          .select("relevance_score, concern_cards!inner(*)").eq("neighborhood_id", hoodData.slug)
           .eq("concern_cards.surfaces_to_feed", true).eq("concern_cards.archived", false)
+          .is("concern_cards.removed_at", null)
           .order("relevance_score", { ascending: false }).limit(5);
         const topCards = (scored || []).map((ns: any) => ns.concern_cards).filter(Boolean);
         if (topCards.length) { setConcernCards(topCards); setCardsAreFallback(true); }
