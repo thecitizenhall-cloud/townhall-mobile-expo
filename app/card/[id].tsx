@@ -455,7 +455,12 @@ export default function ConcernCardDetail() {
                   <Text style={s.govInboxLabel}>Verified government inbox</Text>
                   <Text style={s.govInboxBody}>{reportInfo.official_response}</Text>
                   <Text style={s.govInboxMeta}>
-                    {reportInfo.official_response_name ? `${reportInfo.official_response_name} · ` : ""}{reportInfo.official_response_email}
+                    {reportInfo.official_response_name ? `${reportInfo.official_response_name} · ` : ""}
+                    {/* Domain only, never the mailbox — as the panel above, the
+                        issue screen and the web card page all do. */}
+                    {reportInfo.official_response_email
+                      ? `via ${String(reportInfo.official_response_email).split("@")[1] || "a government inbox"}`
+                      : ""}
                     {reportInfo.responded_at ? ` · ${new Date(reportInfo.responded_at).toLocaleDateString()}` : ""}
                   </Text>
                 </View>
