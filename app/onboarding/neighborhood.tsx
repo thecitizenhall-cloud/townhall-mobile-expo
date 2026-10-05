@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, ActivityIndicator, Alert,
   TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView,
@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { setMyDistrictId } from "../../lib/district";
 import { supabase } from "../../lib/supabase";
 import { detectDistrict } from "../../lib/detectDistrict";
+import { escapeLike } from "../../lib/escapeLike";
 import { T } from "../../lib/theme";
 
 // Live schema: neighborhoods keys off city_id (FK to cities). There is no
@@ -16,10 +17,20 @@ import { T } from "../../lib/theme";
 type Neighborhood = {
   id: string;
   name: string;
+  slug: string | null;
   city_id: string;
   center_lat: number | null;
   center_lng: number | null;
+  city?: { name: string; state: string } | null;
 };
+
+const HOOD_COLUMNS = "id, name, slug, city_id, center_lat, center_lng";
+
+// The town-wide "-general" neighborhood leads, as on web: it is the one the
+// engine is guaranteed to score.
+const generalFirst = (a: Neighborhood, b: Neighborhood) =>
+  (b.slug?.endsWith("-general") ? 1 : 0) - (a.slug?.endsWith("-general") ? 1 : 0) ||
+  a.name.localeCompare(b.name);
 
 // Final fallback when neither GPS nor a neighborhood center is available —
 // Jackson Township center, matching the web app (OnboardingScreen.jsx).
@@ -36,6 +47,7 @@ export default function OnboardingNeighborhood() {
   const [results, setResults] = useState<Neighborhood[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const searchSeq = useRef(0);
 
   useEffect(() => {
     detectLocation();
@@ -60,23 +72,35 @@ export default function OnboardingNeighborhood() {
         { headers: { "User-Agent": "TownhallCafe/1.0" } }
       );
       const geo = await geoRes.json();
-      const suburb = geo.address?.suburb || geo.address?.neighbourhood || geo.address?.village;
+      const addr = geo.address ?? {};
+      const suburb = addr.suburb || addr.neighbourhood || addr.village;
+      const cityName = addr.municipality || addr.city || addr.town || addr.township || addr.village || addr.hamlet;
+      const stateCode = String(addr["ISO3166-2-lvl4"] ?? "").replace(/^US-/, "");
 
-      // Look up in Supabase cities table
+      // Both the name and the state, or nothing. This used to be
+      // `%${city || town || ""}%` with no state and limit(1): an address with
+      // neither field collapsed to `%%` and matched every city, and a resident
+      // of Lakewood, CO could be offered Lakewood Township, NJ. Whole-name
+      // case-insensitive equality (ilike with the wildcards escaped), because
+      // `state` is stored as both "NJ" and "nj". No match means manual search.
+      if (!cityName || !stateCode) return;
       const { data: cities } = await supabase
         .from("cities")
-        .select("id, name")
-        .ilike("name", `%${geo.address?.city || geo.address?.town || ""}%`)
-        .limit(1);
+        .select("id")
+        .ilike("name", escapeLike(cityName))
+        .ilike("state", escapeLike(stateCode));
 
+      // Every matching row, not the first: (name, state) is not unique in
+      // `cities`, and only one of the duplicates may carry neighborhoods.
       if (cities && cities.length > 0) {
-        const { data: hoods } = await supabase
+        const { data } = await supabase
           .from("neighborhoods")
-          .select("id, name, city_id, center_lat, center_lng")
-          .eq("city_id", cities[0].id)
-          .limit(10);
+          .select(HOOD_COLUMNS)
+          .in("city_id", cities.map(c => c.id))
+          .limit(50);
+        const hoods = ((data || []) as Neighborhood[]).sort(generalFirst);
 
-        if (hoods && hoods.length > 0) {
+        if (hoods.length > 0) {
           // Match suburb name if possible
           const match = suburb
             ? hoods.find(h => h.name.toLowerCase().includes(suburb.toLowerCase())) || hoods[0]
@@ -93,13 +117,23 @@ export default function OnboardingNeighborhood() {
 
   async function searchNeighborhoods(q: string) {
     setSearch(q);
-    if (q.length < 2) { setResults([]); return; }
+    const seq = ++searchSeq.current;
+    if (q.trim().length < 2) { setResults([]); return; }
+    // Only neighborhoods that belong to a city, which is all the web picker
+    // ever offers (it loads by city_id). The table also holds the per-election-
+    // district rows ("Jackson District 30", city_id null); unscoped, those
+    // filled the eight slots and the result went straight into
+    // profiles.neighborhood_id.
     const { data } = await supabase
       .from("neighborhoods")
-      .select("id, name, city_id, center_lat, center_lng")
-      .ilike("name", `%${q}%`)
-      .limit(8);
-    setResults(data || []);
+      .select(`${HOOD_COLUMNS}, city:cities(name, state)`)
+      .not("city_id", "is", null)
+      .ilike("name", `%${escapeLike(q.trim())}%`)
+      .order("name")
+      .limit(20);
+    // A slower response to an earlier keystroke must not replace a newer one.
+    if (seq !== searchSeq.current) return;
+    setResults(((data || []) as unknown as Neighborhood[]).sort(generalFirst));
   }
 
   async function selectNeighborhood(hood: Neighborhood) {
@@ -237,6 +271,9 @@ export default function OnboardingNeighborhood() {
                 onPress={() => selectNeighborhood(item)}
               >
                 <Text style={s.resultName}>{item.name}</Text>
+                {item.city ? (
+                  <Text style={s.resultCity}>{item.city.name}, {item.city.state.toUpperCase()}</Text>
+                ) : null}
               </TouchableOpacity>
             )}
             style={{ marginTop: 8 }}
@@ -273,5 +310,6 @@ const s = StyleSheet.create({
     padding: 16, borderBottomWidth: 1, borderBottomColor: T.border,
   },
   resultName: { color: T.cream, fontSize: 15 },
+  resultCity: { color: T.creamDim, fontSize: 12, marginTop: 3 },
   noResults: { color: T.creamDim, fontSize: 13, marginTop: 16, textAlign: "center" },
 });
