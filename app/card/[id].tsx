@@ -164,6 +164,10 @@ export default function ConcernCardDetail() {
           ? supabase.from("concern_cards")
               .select("*").eq("municipality_id", c.municipality_id).eq("impact_type", c.impact_type)
               .neq("id", id).eq("surfaces_to_feed", true)
+              // A merge archives the duplicate but may leave surfaces_to_feed
+              // set, so this filter alone showed matters that had been merged
+              // away. Same fix as web ConcernCardDetailScreen.jsx.
+              .eq("archived", false).is("removed_at", null)
               .order("meeting_date", { ascending: false }).limit(4)
           : Promise.resolve({ data: [] }),
         // No profiles embed: card_events.user_id has NO FK to profiles, so the
