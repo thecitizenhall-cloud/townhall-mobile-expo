@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert,
 } from "react-native";
@@ -16,6 +16,10 @@ const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL ?? "https://www.townhallcafe.o
 // app hits (OnboardingScreen.jsx / VerifyResidencyModal.jsx). There is no
 // Next.js /api/zk-verify route, so SITE_URL must NOT be used for verify.
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+// The prover page is the only thing this WebView should ever navigate to.
+const SITE_ORIGIN = SITE_URL.replace(/^(https?:\/\/[^/]+).*$/, "$1");
+// How long the prover page gets to post "ready" before we stop waiting.
+const READY_TIMEOUT_MS = 20000;
 
 // CQ-MOB-3: first-five-minutes auto-follow, mirrors web's
 // VerifyResidencyModal.jsx seedWatchers() — /api/seed-watchers keys
@@ -48,6 +52,29 @@ export default function OnboardingZKProof() {
   const [statusMsg, setStatusMsg] = useState("Waiting to start…");
   const [attested, setAttested] = useState(false);
   const [webReady, setWebReady] = useState(false); // WebView has posted "ready"
+  const [attempt, setAttempt] = useState(0);        // bumped to remount the WebView
+
+  // The prover page never loading used to be a terminal state: only onMessage
+  // was wired, so offline, a 5xx from /zk-prover or a dead render process all
+  // left webReady false and the button disabled on "Preparing…" for good.
+  // Every one of those now lands in the error block, which has a retry and
+  // the "Read without verifying" exit.
+  function loadFailed(why: string) {
+    setWebReady(false);
+    setStatus(prev => (prev === "done" ? prev : "error"));
+    setStatusMsg(prev => (prev === "Residency verified!" ? prev : why));
+  }
+
+  // A load that neither fails nor posts "ready" (a stalled connection) fires
+  // none of the WebView's error callbacks, so it gets a deadline too.
+  useEffect(() => {
+    if (webReady) return;
+    const t = setTimeout(
+      () => loadFailed("Couldn't load the residency prover. Check your connection and try again."),
+      READY_TIMEOUT_MS,
+    );
+    return () => clearTimeout(t);
+  }, [webReady, attempt]);
 
   // Set params before page JS runs so they're available when the page posts "ready".
   // The page itself posts { type: "ready" } after its event listener is wired —
@@ -158,8 +185,14 @@ export default function OnboardingZKProof() {
 
       {/* WebView loads the site's ZK proof page which handles snarkjs + WASM */}
       <WebView
+        key={attempt}
         ref={webRef}
         source={{ uri: `${SITE_URL}/zk-prover?native=1` }}
+        originWhitelist={[SITE_ORIGIN]}
+        onError={() => loadFailed("Couldn't load the residency prover. Check your connection and try again.")}
+        onHttpError={(e) => loadFailed(`The residency prover is unavailable right now (${e.nativeEvent.statusCode}). Try again in a moment.`)}
+        onRenderProcessGone={() => loadFailed("The residency prover stopped unexpectedly. Try again.")}
+        onContentProcessDidTerminate={() => loadFailed("The residency prover stopped unexpectedly. Try again.")}
         style={{ height: 1, width: 1, opacity: 0 }}
         injectedJavaScriptBeforeContentLoaded={injectedJS}
         onMessage={handleMessage}
@@ -198,6 +231,9 @@ export default function OnboardingZKProof() {
           <TouchableOpacity style={s.btn} onPress={() => {
             setStatus("idle");
             setStatusMsg("Waiting to start…");
+            // Nothing to retry against if the page never came up (or died):
+            // remount the WebView, which also restarts the ready deadline.
+            if (!webReady) setAttempt(a => a + 1);
           }}>
             <Text style={s.btnText}>Try again</Text>
           </TouchableOpacity>
