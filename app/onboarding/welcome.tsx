@@ -47,25 +47,30 @@ export default function OnboardingWelcome() {
             .eq("id", p.neighborhood_id)
             .maybeSingle();
 
+          // One query with an inner embed, so the three slots go to cards a
+          // resident may actually be shown. This used to take the top three
+          // scores and then fetch those cards by id with no filter at all, so
+          // an archived (merged-away), unsurfaced or removed card could be one
+          // of the first three things a new resident saw. `!inner` is
+          // load-bearing — see lib/concernCards.ts.
           const { data: scores } = hood?.slug
             ? await supabase
                 .from("neighborhood_scores")
-                .select("concern_card_id, relevance_score")
+                .select("relevance_score, concern_cards!inner(*)")
                 .eq("neighborhood_id", hood.slug)
                 .gte("relevance_score", 0.65)
+                .eq("concern_cards.surfaces_to_feed", true)
+                .eq("concern_cards.archived", false)
+                .is("concern_cards.removed_at", null)
                 .order("relevance_score", { ascending: false })
                 .limit(3)
             : { data: null };
 
-          if (scores?.length) {
-            const ids = scores.map(s => s.concern_card_id);
-            const { data: cc } = await supabase
-              .from("concern_cards")
-              .select("*")
-              .in("id", ids)
-              .order("created_at", { ascending: false });
-            setCards(cc || []);
-          }
+          const cc = ((scores || []) as any[])
+            .map(ns => ns.concern_cards as ConcernCard | null)
+            .filter((c): c is ConcernCard => !!c)
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          if (cc.length) setCards(cc);
         }
 
         // Never stamp onboarded without a neighborhood. index.tsx routes on the
