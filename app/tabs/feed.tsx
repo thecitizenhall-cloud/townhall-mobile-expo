@@ -445,7 +445,14 @@ export default function FeedScreen() {
     try {
       const municipality = profile?.neighborhood || profile?.municipality_id || "";
       const params = new URLSearchParams({ text, municipality });
-      const r = await fetch(`${SITE_URL}/api/report/geocode?${params}`);
+      // The route requires the resident's session. Sent without it, every call
+      // was refused and swallowed below, so a typed address never got
+      // coordinates and the report was stored with none.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const r = await fetch(`${SITE_URL}/api/report/geocode?${params}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
       const d = await r.json();
       if (r.ok && Number.isFinite(d.lat) && Number.isFinite(d.lng)) {
         setReportCoords({ lat: d.lat, lng: d.lng });
@@ -454,7 +461,7 @@ export default function FeedScreen() {
         showToast("Could not find that location — try an address or cross-streets");
       }
     } catch { /* keep the typed label when geocoding is unavailable */ }
-    setGeocodingReport(false);
+    finally { setGeocodingReport(false); }
   }
 
   // Pressing a band pill asks the town a question; it does not re-slice the
