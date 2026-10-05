@@ -8,6 +8,10 @@ import { getCurrentUser } from "../../lib/sessionUser";
 import { getWeeklyActivity, WeeklyActivity } from "../../lib/concernCards";
 import { T } from "../../lib/theme";
 import ConcernCardItem from "../../components/ConcernCardItem";
+import {
+  getMyQuestions, partitionQuestions, receiptFor, resolutionSentence, conditionSentence,
+  StandingQuestion,
+} from "../../lib/standingQuestions";
 
 const STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
   open: { bg: T.blueLo, color: T.blueHi, label: "Open" },
@@ -56,6 +60,29 @@ function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highligh
   );
 }
 
+// One of the resident's own standing questions. Same fields and wording as the
+// web tracker (YourIssuesScreen): the receipt, the question, the matter it was
+// asked on, then either what the record did or what it is still waiting for.
+// Deliberately not "Answered by: <condition>" — a condition is not an answer.
+function QuestionRow({ q, isReturn, onPress }: { q: StandingQuestion; isReturn: boolean; onPress: () => void }) {
+  const receipt = receiptFor(q);
+  const tone = receipt.tone === "teal" ? T.tealHi : receipt.tone === "amber" ? T.amberHi : T.creamDim;
+  const title = q.concern_cards?.title;
+  const detail = isReturn ? resolutionSentence(q) : receipt.waiting || conditionSentence(q.condition_kind);
+  const quote = isReturn ? q.evidence?.source_quote : null;
+  return (
+    <Pressable style={s.issue} onPress={onPress}>
+      <View style={s.issueRow}>
+        <Text style={[s.statusPill, { backgroundColor: T.surface, color: tone, borderColor: tone }]}>{receipt.label}</Text>
+      </View>
+      <Text style={[s.issueTitle, { marginTop: 8 }]}>{q.body}</Text>
+      {title ? <Text style={s.questionMatter} numberOfLines={2}>on “{title}”</Text> : null}
+      {detail ? <Text style={s.questionDetail}>{detail}</Text> : null}
+      {quote ? <Text style={s.cardQuote}>“{quote}”</Text> : null}
+    </Pressable>
+  );
+}
+
 // A watched CONCERN CARD whose outcome flipped since last visit — the automated
 // civic-engine round trip's "return" leg (parity with web YourIssuesScreen).
 function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
@@ -96,6 +123,7 @@ export default function YourIssuesScreen() {
   const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity | null>(null);
   const [concernCards, setConcernCards] = useState<any[]>([]);
   const [cardsAreFallback, setCardsAreFallback] = useState(false);
+  const [questions, setQuestions] = useState<StandingQuestion[]>([]);
 
   // Reload on focus so follows/votes made elsewhere show without a manual pull.
   const focusedOnce = useRef(false);
@@ -123,6 +151,7 @@ export default function YourIssuesScreen() {
         { data: watched },
         { data: cardWatches },
         activity,
+        myQuestions,
       ] = await Promise.all([
         supabase.from("posts")
           .select("*, civic_issues(id, title, status, official_response, voice_count, priority_pct)")
@@ -137,12 +166,16 @@ export default function YourIssuesScreen() {
         supabase.from("card_watches")
           .select("concern_card_id, created_at").eq("user_id", u.id).order("created_at", { ascending: false }),
         getWeeklyActivity(u.id),
+        // Standing questions this resident put on the record, with the receipt
+        // each one has earned so far.
+        getMyQuestions(u.id),
       ]);
 
       setMyPosts(posts || []);
       setMyVotes(votes || []);
       setWatchedIssues((watched || []).map((w: any) => w.civic_issues).filter(Boolean));
       setWeeklyActivity(activity);
+      setQuestions(myQuestions.questions);
 
       // ── Phase 2: reads that depend on phase-1 results, in parallel ────────
       // Guarded branches resolve to empty so the Promise.all shape is stable.
@@ -238,10 +271,13 @@ export default function YourIssuesScreen() {
   const onRefresh = useCallback(() => load(true), []);
   const openIssue = (id: string) => router.push({ pathname: "/issue/[id]", params: { id } });
   const openCard = (id: string) => router.push({ pathname: "/card/[id]", params: { id } });
+  const openQuestion = (q: StandingQuestion) => { if (q.concern_card_id) openCard(q.concern_card_id); };
+  const { returned: returnedQuestions, standing: standingQuestions } = partitionQuestions(questions);
 
   const myEscalated = myPosts.filter((p) => p.escalated && p.civic_issues);
   const hasAnything =
-    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0;
+    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0 ||
+    returnedQuestions.length > 0 || standingQuestions.length > 0;
   const wa = weeklyActivity;
   const showActivity = wa && (wa.cardsRead > 0 || wa.votesCast > 0 || wa.itemsWatched > 0 || wa.responsesReceived > 0);
 
@@ -298,6 +334,22 @@ export default function YourIssuesScreen() {
                   <Text style={[s.sectionLabel, { color: T.amberHi }]}>New since your last visit</Text>
                   {sinceLastVisitCards.map((card) => <MovedCardRow key={"card-" + card.id} card={card} onPress={() => openCard(card.id)} />)}
                   {sinceLastVisit.map((iss) => <IssueRow key={iss.id} issue={iss} highlight updated onPress={() => openIssue(iss.id)} />)}
+                </>
+              )}
+
+              {/* The only rows here that are the record coming back to THIS
+                  resident. Returns outrank waiting; both sit above the lists
+                  of things followed, as on web. */}
+              {returnedQuestions.length > 0 && (
+                <>
+                  <Text style={[s.sectionLabel, { color: T.tealHi }]}>The record came back on your questions</Text>
+                  {returnedQuestions.map((q) => <QuestionRow key={q.id} q={q} isReturn onPress={() => openQuestion(q)} />)}
+                </>
+              )}
+              {standingQuestions.length > 0 && (
+                <>
+                  <Text style={s.sectionLabel}>Questions still standing</Text>
+                  {standingQuestions.map((q) => <QuestionRow key={q.id} q={q} isReturn={false} onPress={() => openQuestion(q)} />)}
                 </>
               )}
 
@@ -358,6 +410,8 @@ const s = StyleSheet.create({
   statusPill: { paddingHorizontal: 9, paddingVertical: 2, borderRadius: 99, fontSize: 10, fontWeight: "500", borderWidth: 1, overflow: "hidden" },
   voteMeta: { fontSize: 10, color: T.creamFaint },
   updated: { fontSize: 10, color: T.amberHi, fontWeight: "500" },
+  questionMatter: { color: T.creamDim, fontSize: 12, marginTop: 4, lineHeight: 17 },
+  questionDetail: { color: T.creamDim, fontSize: 12, marginTop: 8, lineHeight: 18 },
   cardQuote: { color: T.creamDim, fontSize: 12, fontStyle: "italic", marginTop: 8, borderLeftWidth: 2, borderLeftColor: T.border, paddingLeft: 10, lineHeight: 18 },
   responseInd: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
   responseIndText: { fontSize: 12, color: T.tealHi, fontWeight: "600" },
