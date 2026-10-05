@@ -373,10 +373,26 @@ export default function ProfileScreen() {
       {
         text: "Request deletion", style: "destructive",
         onPress: async () => {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-          await supabase.from("deletion_requests").insert({ user_id: user.id, email: user.email });
-          Alert.alert("Requested", "Your deletion request has been recorded.");
+          // Mirrors web ProfileScreen.handleDeleteAccount. The insert result
+          // used to be ignored and "recorded" shown regardless, so a failed
+          // write told the resident their request existed when it did not.
+          const emailInstead = "We couldn't record your deletion request. Please email hello@townhallcafe.org with the subject \"Delete my account\" and we'll process it within 30 days.";
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) { Alert.alert("Not recorded", emailInstead); return; }
+            const { error } = await supabase.from("deletion_requests")
+              .insert({ user_id: user.id, email: user.email || null });
+            // 23505 = an open request already exists, which is the outcome asked for.
+            if (error && error.code !== "23505") { Alert.alert("Not recorded", emailInstead); return; }
+          } catch {
+            Alert.alert("Not recorded", emailInstead);
+            return;
+          }
+          // Sign out once it is recorded, as web does, so the account is not
+          // used further while the request is open.
+          await supabase.auth.signOut();
+          router.replace("/auth/login");
+          Alert.alert("Requested", "Your deletion request has been recorded. Your account will be removed within 30 days.");
         },
       },
     ]);
