@@ -14,6 +14,7 @@ import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { isVerifiedForCurrentNeighborhood, goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
+import { municipalityForSlug } from "../../lib/townOf";
 
 // The stable key tying a raised issue back to a budget line (web parity):
 // match on (municipality_id, fcoa) — or label when there's no FCOA — not a uuid
@@ -140,8 +141,7 @@ export default function BudgetScreen() {
         const { data: p } = await supabase.from("profiles").select("neighborhood_id").eq("id", user.id).maybeSingle();
         if (p?.neighborhood_id) {
           const { data: hood } = await supabase.from("neighborhoods").select("slug").eq("id", p.neighborhood_id).maybeSingle();
-          const prefix = hood?.slug?.split("-")[0];
-          if (prefix) muni = `${prefix}_nj`;
+          muni = (await municipalityForSlug(hood?.slug)) || muni;
         }
       }
       let { data: b } = await supabase.from("budgets")

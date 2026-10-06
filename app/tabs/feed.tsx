@@ -8,6 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase, CivicItem } from "../../lib/supabase";
+import { municipalityForNeighborhood } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
 // Shown when town_feed itself fails. Without it an empty result from a failed
@@ -515,15 +516,10 @@ export default function FeedScreen() {
     if (!currentUser || !verified) { goVerify(); return; }   // MOB-3: no crash for anon
     setReporting(true);
     const { data: prof } = await supabase.from("profiles").select("neighborhood_id, municipality_id").eq("id", currentUser.id).maybeSingle();
-    // MOB-2: fall back to the resident's own town (derived from their
-    // neighborhood slug: "lakewood-general" -> "lakewood_nj") instead of
-    // hardcoding jackson_nj, which misfiled every Lakewood report under Jackson.
-    let muni = prof?.municipality_id || null;
-    if (!muni && prof?.neighborhood_id) {
-      const { data: hood } = await supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle();
-      const prefix = hood?.slug?.split("-")[0];
-      if (prefix) muni = `${prefix}_nj`;
-    }
+    // MOB-2: fall back to the resident's own town instead of hardcoding
+    // jackson_nj, which misfiled every Lakewood report under Jackson. Resolved
+    // against real municipality ids (lib/townOf.ts), same as web.
+    const muni = prof?.municipality_id || await municipalityForNeighborhood(prof?.neighborhood_id);
     const { error } = await supabase.from("resident_reports").insert({
       reporter_id: currentUser.id, neighborhood_id: prof?.neighborhood_id || null,
       municipality_id: muni || "jackson_nj", report_type: reportType,
