@@ -245,13 +245,39 @@ export default function ConcernCardDetail() {
   async function updateReportStatus(newStatus: string) {
     if (!reportRecord || updatingStatus) return;
     setUpdatingStatus(true);
-    const { error } = await supabase.from("resident_reports").update({ status: newStatus }).eq("id", reportRecord.id);
-    if (!error) {
-      setReportRecord({ ...reportRecord, status: newStatus });
-      const outcomeMap: Record<string, string> = { open: "pending", acknowledged: "pending", in_progress: "deferred", resolved: "approved" };
-      await supabase.from("concern_cards").update({ outcome_signal: outcomeMap[newStatus] || "pending" }).eq("id", id);
+    // One rpc (web migration 122) moves the report and, where it may, the card
+    // built from it. This used to update resident_reports and then write
+    // concern_cards.outcome_signal directly — a write a resident's session is
+    // not allowed to make, with its error never read, so the card's badge
+    // never moved and nothing said so. Mirror of web's handler; three outcomes.
+    try {
+      const { data, error } = await supabase.rpc("set_report_status", {
+        p_report_id: reportRecord.id, p_status: newStatus,
+      });
+      if (error) {
+        Alert.alert("Couldn't update the report", error.message);
+        return;
+      }
+      setReportRecord({ ...reportRecord, status: data?.status ?? newStatus });
+      if (data?.card_updated) {
+        const outcomeMap: Record<string, string> = { in_progress: "deferred", resolved: "approved" };
+        const outcome = outcomeMap[newStatus] || "pending";
+        setCard((prev: any) => (prev ? { ...prev, outcome_signal: outcome } : prev));
+      } else if (data?.card_id) {
+        // A card exists and was deliberately left alone (archived, removed, or
+        // merged into another record). Say so — otherwise the silent failure
+        // has only moved from the database into the client. A null card_id
+        // means there is no card, and silence is correct.
+        Alert.alert(
+          "Report updated",
+          "Your report is updated. This matter has been folded into another record, so its status there didn't change and its followers weren't notified.",
+        );
+      }
+    } catch (e: any) {
+      Alert.alert("Couldn't update the report", e?.message || "Check your connection and try again.");
+    } finally {
+      setUpdatingStatus(false);
     }
-    setUpdatingStatus(false);
   }
 
   async function postCardComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }) {
