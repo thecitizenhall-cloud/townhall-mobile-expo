@@ -13,8 +13,9 @@ import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/to
 
 // Shown when town_feed itself fails. Without it an empty result from a failed
 // call reads as a quiet town.
-// Shown when a street report cannot be tied to a town. Keep in step with web.
-const REPORT_NO_TOWN = "We couldn't tell which town this report belongs to, so it wasn't sent. What you wrote is still here. Please try again later, or email hello@townhallcafe.org.";
+// Shown when a street report cannot be tied to a town. Same sentence as web's
+// TownScreen — change the two together.
+const REPORT_NO_TOWN = "Reports aren't open for your town yet.";
 
 const RECORD_LOAD_ERROR = "Couldn't load the town record — pull down to refresh.";
 import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNeighborhood";
