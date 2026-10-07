@@ -1,5 +1,5 @@
 {
-  "_readme": "Scope for scripts/audit-gate.mjs. An advisory is set aside only if its package is in buildTimeOnly AND every dependency path to it passes through a buildTimeOwners package (re-checked against package-lock.json on every run). Anything not listed fails the gate. Every entry needs a reason. Do not add a package here to make the gate pass: add it only after confirming it cannot reach a release build.",
+  "_readme": "Scope for scripts/audit-gate.mjs. An advisory is set aside only if its package is in buildTimeOnly AND every dependency path to it passes through a buildTimeOwners package (re-checked against package-lock.json on every run). Anything not listed fails the gate. Every entry needs a reason. Do not add a package here to make the gate pass: add it only after confirming it cannot reach a release build. acceptedRisk is different: it is for an advisory that DOES ship and that the owner has decided to accept for now. Each entry names the exact advisory ids accepted, and needs a reason, a revisit sentence and revisitWhen (package -> major version). The acceptance lapses, and the gate fails, when any of those majors changes or a new advisory appears on the package. It exempts nothing else.",
   "buildTimeOwners": [
     { "package": "@expo/cli", "reason": "The Expo command-line tool and dev server. Runs on a developer machine or build host; not bundled into the app." },
     { "package": "@expo/metro", "reason": "Expo's wrapper around the Metro bundler. Runs at bundle time only." },
@@ -20,5 +20,14 @@
     { "package": "image-size", "reason": "Reads asset dimensions while Metro bundles, under @expo/metro." },
     { "package": "node-forge", "reason": "Development code-signing certificates in the Expo CLI." },
     { "package": "source-map-js", "reason": "Source maps for PostCSS in the bundler config, under @expo/metro-config." }
+  ],
+  "acceptedRisk": [
+    {
+      "package": "decode-uri-component",
+      "advisories": ["GHSA-vcc3-ghjq-m6fr"],
+      "reason": "Accepted by the owner on 2026-10-06. Ships in the app through expo-router > query-string@7. The advisory is a denial of service: malformed percent-encoded input can make decoding take excessive CPU time. Per the advisory there is no data disclosure, memory corruption or code execution. Here the code runs on the resident's own device when the router handles a URL, so the worst case is that resident's own app becoming unresponsive on a crafted link; nothing server-side. Which router code paths decode outside input was not fully traced. No compatible fix exists: the patched release, 0.5.0, is ESM-only (\"type\": \"module\"), while 0.2.2 is CommonJS and query-string@7.1.3 loads it with require(), so an override to 0.5.0 would break loading rather than fix anything. Do not try that override.",
+      "revisit": "On the next Expo SDK upgrade, check whether expo-router has moved to a query-string that uses a patched decode-uri-component (or dropped it), then remove this entry.",
+      "revisitWhen": {"expo": "57", "expo-router": "57", "query-string": "7"}
+    }
   ]
 }

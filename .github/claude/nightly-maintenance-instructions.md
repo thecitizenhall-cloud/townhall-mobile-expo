@@ -43,7 +43,10 @@ draft PR before anything merges — you are not deploying, you are proposing.
   fails on purpose when a vulnerable package can reach the shipped app or has
   not been classified. Never make it pass by adding a package to the scope
   file or by changing the script — whether something ships is a human
-  decision. Fix the dependency if that is in scope above; otherwise report it.
+  decision. That covers all three lists in the scope file, `acceptedRisk`
+  included: accepting a risk that ships is the owner's call, and an entry
+  whose acceptance has lapsed must be reported, never renewed. Fix the
+  dependency if that is in scope above; otherwise report it.
 - Force-push, `--no-verify`, amending existing commits, merging your own PR.
 
 If a finding falls in the forbidden list, or you're not confident a fix is
