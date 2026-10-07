@@ -54,9 +54,15 @@ jobs:
             echo "type check FAILED" >> "$FINDINGS"; FAILED=1
           fi
 
-          echo "## npm audit (production deps)" >> "$FINDINGS"
-          if ! npm audit --omit=dev >> "$FINDINGS" 2>&1; then
-            echo "npm audit reported vulnerabilities" >> "$FINDINGS"; FAILED=1
+          # Scoped gate, not a bare `npm audit --omit=dev`: the Expo/Metro/Babel
+          # toolchain is reachable from production dependencies, so the bare
+          # command could never pass and its failure said nothing. The script
+          # fails only on advisories that can reach the shipped app or that
+          # nobody has classified, and still prints the rest. Scope and reasons
+          # live in .github/audit-scope.json.
+          echo "## dependency audit (scripts/audit-gate.mjs)" >> "$FINDINGS"
+          if ! node scripts/audit-gate.mjs >> "$FINDINGS" 2>&1; then
+            echo "dependency audit gate FAILED" >> "$FINDINGS"; FAILED=1
           fi
 
           echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
