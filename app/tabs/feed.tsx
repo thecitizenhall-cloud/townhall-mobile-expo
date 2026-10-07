@@ -8,11 +8,15 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase, CivicItem } from "../../lib/supabase";
-import { municipalityForNeighborhood } from "../../lib/townOf";
+import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
 // Shown when town_feed itself fails. Without it an empty result from a failed
 // call reads as a quiet town.
+// Shown when a street report cannot be tied to a town. Same sentence as web's
+// TownScreen — change the two together.
+const REPORT_NO_TOWN = "We couldn't tell which town this report belongs to, so it wasn't sent. What you wrote is still here. Please try again later, or email hello@townhallcafe.org.";
+
 const RECORD_LOAD_ERROR = "Couldn't load the town record — pull down to refresh.";
 import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNeighborhood";
 import { getCurrentUser } from "../../lib/sessionUser";
@@ -128,6 +132,12 @@ export default function FeedScreen() {
   const [filter, setFilter] = useState<"all" | "issue" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
+  const [slugTown, setSlugTown] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    municipalityForSlug(neighborhoodSlug).then((t) => { if (!cancelled) setSlugTown(t); }, () => {});
+    return () => { cancelled = true; };
+  }, [neighborhoodSlug]);
   const [loadError, setLoadError] = useState<string | null>(null);
   // TOWN-WIDE counts from town_feed, never measured off the loaded array.
   const [feedCounts, setFeedCounts] = useState<FeedCounts>({ ...EMPTY_COUNTS });
@@ -516,13 +526,22 @@ export default function FeedScreen() {
     if (!currentUser || !verified) { goVerify(); return; }   // MOB-3: no crash for anon
     setReporting(true);
     const { data: prof } = await supabase.from("profiles").select("neighborhood_id, municipality_id").eq("id", currentUser.id).maybeSingle();
-    // MOB-2: fall back to the resident's own town instead of hardcoding
-    // jackson_nj, which misfiled every Lakewood report under Jackson. Resolved
-    // against real municipality ids (lib/townOf.ts), same as web.
+    // The resident's own town, resolved against real municipality ids
+    // (lib/townOf.ts), same as web.
     const muni = prof?.municipality_id || await municipalityForNeighborhood(prof?.neighborhood_id);
+    // No town, no report. This used to fall back to "jackson_nj", which filed
+    // the report in another town's record while telling the resident it was
+    // submitted. The column is NOT NULL with no foreign key, so the database
+    // accepts any string — this is the only place a wrong town can be caught.
+    // The draft is kept so nothing they typed is lost.
+    if (!muni) {
+      setReporting(false);
+      Alert.alert("Report not sent", REPORT_NO_TOWN);
+      return;
+    }
     const { error } = await supabase.from("resident_reports").insert({
       reporter_id: currentUser.id, neighborhood_id: prof?.neighborhood_id || null,
-      municipality_id: muni || "jackson_nj", report_type: reportType,
+      municipality_id: muni, report_type: reportType,
       title: REPORT_TYPES.find((r) => r.key === reportType)?.label || reportType,
       description: reportDesc.trim(), location_text: reportLoc.trim() || null,
       lat: reportCoords?.lat ?? null, lng: reportCoords?.lng ?? null, status: "open",
@@ -557,11 +576,15 @@ export default function FeedScreen() {
   const concernCards = civic.filter((c) => c.source === "civic_engine" && c.concern_card_id);
   const nonBotPosts = posts.filter((p) => !p.profiles?.is_bot);
 
-  // Town id for the Pulse: "<town>_<state>" from the resident's municipality_id
-  // (boards append a third token, e.g. "jackson_nj_planning"); default jackson_nj.
+  // Town id for the Pulse and the map: "<town>_<state>" from the resident's
+  // municipality_id (boards append a third token, e.g. "jackson_nj_planning"),
+  // else resolved from their neighborhood. Null when neither resolves — the
+  // Pulse then renders nothing. It used to default to jackson_nj, and since
+  // profiles.municipality_id is unset for nearly everyone, that showed
+  // Jackson's numbers to residents of every other town.
   const townId = profile?.municipality_id
     ? String(profile.municipality_id).split("_").slice(0, 2).join("_")
-    : "jackson_nj";
+    : slugTown;
 
   // Stream items, filtered.
   let streamItems: FeedItem[] = [];
@@ -874,7 +897,7 @@ export default function FeedScreen() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
                 {filterTabs.map((t) => (
                   <Pressable key={t.key} onPress={() => t.key === "map"
-                    ? router.push({ pathname: "/map" as any, params: { muni: townId } })
+                    ? router.push({ pathname: "/map" as any, params: townId ? { muni: townId } : {} })
                     : t.key === "budget"
                       ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */)
                       : t.key === "near"
