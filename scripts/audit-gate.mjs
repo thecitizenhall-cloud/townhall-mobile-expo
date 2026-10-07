@@ -21,6 +21,19 @@
 // yet. Unknown is loud, never excluded. Set-aside advisories are still printed
 // so they stay visible. If the audit cannot be run or read, the gate fails.
 //
+// A third category, `acceptedRisk`, is for an advisory that DOES ship and that
+// the owner has decided to live with for now. It is narrower than it sounds:
+//
+//   - it names the exact advisory ids accepted, so a new advisory against the
+//     same package fails the gate;
+//   - it must carry a reason, a `revisit` sentence, and `revisitWhen`: the
+//     major versions of the packages the decision depends on. When any of
+//     those majors changes in package-lock.json the acceptance lapses and the
+//     gate fails until someone looks again. An accepted risk with no expiry is
+//     just an exclusion;
+//   - it is printed on every run, and it exempts nothing else from the rules
+//     above.
+//
 // Usage: node scripts/audit-gate.mjs [audit.json]   (runs npm audit if omitted)
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -46,8 +59,16 @@ if (!audit?.vulnerabilities || !lock?.packages) fail("audit or lockfile is not i
 
 const owners = new Map(scope.buildTimeOwners.map((o) => [o.package, o.reason]));
 const allowed = new Map(scope.buildTimeOnly.map((o) => [o.package, o.reason]));
+const accepted = new Map((scope.acceptedRisk || []).map((o) => [o.package, o]));
 for (const [name, reason] of [...owners, ...allowed]) {
   if (!reason || !String(reason).trim()) fail(`"${name}" in .github/audit-scope.json has no reason. Every entry must say why.`);
+}
+const filled = (v) => typeof v === "string" && v.trim().length > 0;
+for (const [name, a] of accepted) {
+  if (!filled(a.reason) || !filled(a.revisit)) fail(`acceptedRisk "${name}" needs both a reason and a revisit sentence.`);
+  if (!Array.isArray(a.advisories) || !a.advisories.length) fail(`acceptedRisk "${name}" must name the advisory ids it accepts.`);
+  if (!a.revisitWhen || !Object.keys(a.revisitWhen).length) fail(`acceptedRisk "${name}" needs revisitWhen (package -> major version) so the acceptance can lapse.`);
+  if (allowed.has(name)) fail(`"${name}" is in both buildTimeOnly and acceptedRisk. It either ships or it does not.`);
 }
 
 // ── Dependency graph from the lockfile, production side only ────────────────
@@ -95,12 +116,23 @@ function runtimePathTo(target) {
 // Only packages that carry an advisory themselves are judged. The other
 // entries in the report ("expo", "metro", …) are there because they depend on
 // one, and follow from it.
-const failing = [], setAside = [];
+const failing = [], setAside = [], acceptedNow = [];
+const majorOf = (pkg) => String(pkgs[`node_modules/${pkg}`]?.version ?? "").split(".")[0];
 for (const [name, v] of Object.entries(audit.vulnerabilities)) {
   const advisories = (v.via || []).filter((x) => typeof x === "object");
   if (!advisories.length) continue;
-  const ids = [...new Set(advisories.map((a) => a.url?.split("/").pop() || a.title))].join(", ");
+  const idList = [...new Set(advisories.map((a) => a.url?.split("/").pop() || a.title))];
+  const ids = idList.join(", ");
   const entry = { name, severity: v.severity, ids };
+  if (accepted.has(name)) {
+    const a = accepted.get(name);
+    const extra = idList.filter((id) => !a.advisories.includes(id));
+    const moved = Object.entries(a.revisitWhen).filter(([pkg, major]) => majorOf(pkg) !== String(major));
+    if (extra.length) failing.push({ ...entry, why: `accepted for ${a.advisories.join(", ")} only; new advisory not covered: ${extra.join(", ")}` });
+    else if (moved.length) failing.push({ ...entry, why: `acceptance has lapsed (${moved.map(([pkg, major]) => `${pkg} was ${major}, now ${majorOf(pkg) || "absent"}`).join("; ")}). Revisit: ${a.revisit}` });
+    else acceptedNow.push({ ...entry, why: `${a.reason}\n      Revisit: ${a.revisit}` });
+    continue;
+  }
   if (!allowed.has(name)) {
     failing.push({ ...entry, why: "not classified in .github/audit-scope.json — decide whether it ships" });
     continue;
@@ -110,7 +142,7 @@ for (const [name, v] of Object.entries(audit.vulnerabilities)) {
   if (leak) failing.push({ ...entry, why: `listed as build-time only, but reachable outside the toolchain: ${leak.join(" > ")}` });
   else setAside.push({ ...entry, why: allowed.get(name) });
 }
-const stale = [...allowed.keys()].filter((n) => !audit.vulnerabilities[n]);
+const stale = [...allowed.keys(), ...accepted.keys()].filter((n) => !audit.vulnerabilities[n]);
 
 const line = (e) => `  [${e.severity}] ${e.name} (${e.ids})\n      ${e.why}`;
 const sev = audit.metadata?.vulnerabilities;
@@ -119,6 +151,8 @@ console.log(`\nFAILING — can reach the shipped app, or not yet classified (${f
 console.log(failing.length ? failing.map(line).join("\n") : "  none");
 console.log(`\nSet aside — build-time toolchain only, verified against package-lock.json (${setAside.length}). Informational:`);
 console.log(setAside.length ? setAside.map(line).join("\n") : "  none");
+console.log(`\nAccepted risk — SHIPS in the app; accepted by the owner until the revisit condition (${acceptedNow.length}). Informational:`);
+console.log(acceptedNow.length ? acceptedNow.map(line).join("\n") : "  none");
 if (stale.length) console.log(`\nNo longer reported; remove from .github/audit-scope.json: ${stale.join(", ")}`);
 
 if (failing.length) { console.log("\naudit gate FAILED"); process.exit(1); }
