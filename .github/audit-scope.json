@@ -1,0 +1,24 @@
+{
+  "_readme": "Scope for scripts/audit-gate.mjs. An advisory is set aside only if its package is in buildTimeOnly AND every dependency path to it passes through a buildTimeOwners package (re-checked against package-lock.json on every run). Anything not listed fails the gate. Every entry needs a reason. Do not add a package here to make the gate pass: add it only after confirming it cannot reach a release build.",
+  "buildTimeOwners": [
+    { "package": "@expo/cli", "reason": "The Expo command-line tool and dev server. Runs on a developer machine or build host; not bundled into the app." },
+    { "package": "@expo/metro", "reason": "Expo's wrapper around the Metro bundler. Runs at bundle time only." },
+    { "package": "@expo/metro-config", "reason": "Bundler configuration, evaluated at bundle time only." },
+    { "package": "@expo/config-plugins", "reason": "Edits the native project during prebuild. Not part of the JavaScript bundle." },
+    { "package": "@react-native/community-cli-plugin", "reason": "React Native CLI commands (start, bundle). Build and dev time only." },
+    { "package": "react-devtools-core", "reason": "The React Native debugger backend. Not included in a release build." },
+    { "package": "babel-preset-expo", "reason": "Compile-time Babel preset." },
+    { "package": "@babel/core", "reason": "The Babel compiler. Transforms source at bundle time; not shipped." },
+    { "package": "@babel/helper-compilation-targets", "reason": "Babel helper that works out compile targets. Reached through the Babel plugins that react-native-worklets lists as dependencies; those plugins run inside the compiler, not in the app." }
+  ],
+  "buildTimeOnly": [
+    { "package": "@xmldom/xmldom", "reason": "XML parsing for plist and Xcode project files during prebuild, under @expo/config-plugins." },
+    { "package": "baseline-browser-mapping", "reason": "Browser-support data for browserslist, used when compiling." },
+    { "package": "braces", "reason": "Glob matching in Metro's file map, under @expo/cli." },
+    { "package": "browserslist", "reason": "Compile-target resolution for Babel and the bundler config." },
+    { "package": "compression", "reason": "HTTP compression in the Expo dev server, under @expo/cli." },
+    { "package": "image-size", "reason": "Reads asset dimensions while Metro bundles, under @expo/metro." },
+    { "package": "node-forge", "reason": "Development code-signing certificates in the Expo CLI." },
+    { "package": "source-map-js", "reason": "Source maps for PostCSS in the bundler config, under @expo/metro-config." }
+  ]
+}
