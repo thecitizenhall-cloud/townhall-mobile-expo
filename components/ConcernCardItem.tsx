@@ -2,6 +2,8 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { T } from "../lib/theme";
 import { councilLabel } from "../lib/cardArea";
 import { outcomeFor } from "../lib/outcome";
+import { stalledBadge } from "../lib/roundTrip";
+import { dayLabel } from "../lib/format";
 import type { ConcernCard } from "../lib/supabase";
 
 type Props = {
@@ -16,6 +18,9 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
   const quote = card.source_quote ?? card.quote;
   const summary = card.summary ?? card.body;
   const dateStr = card.meeting_date ?? card.created_at;
+  // Null for a settled or announced matter and for one still scheduled — see
+  // lib/roundTrip.ts for why each of those must never carry a clock.
+  const stalled = stalledBadge(card);
 
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.8}>
@@ -35,6 +40,20 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
       ) : summary ? (
         <Text style={s.summary} numberOfLines={2}>{summary}</Text>
       ) : null}
+
+      {stalled && (
+        // Silence is information — same wording as the web matter preview.
+        <View style={s.stalledRow}>
+          <Text style={[s.stalledLabel, stalled.urgent && s.stalledUrgent]}>
+            {stalled.reason === "overdue" ? "Past due" : "No movement"}
+          </Text>
+          <Text style={[s.stalledText, stalled.urgent && s.stalledUrgent]}>
+            {stalled.reason === "overdue"
+              ? `${dayLabel(stalled.days)} past its expected date`
+              : `Nothing for ${dayLabel(stalled.days)}`}
+          </Text>
+        </View>
+      )}
 
       <View style={s.footer}>
         <Text style={s.date}>
@@ -72,6 +91,13 @@ const s = StyleSheet.create({
     borderLeftWidth: 2, borderLeftColor: T.amberMid, paddingLeft: 10, marginBottom: 10,
   },
   summary: { color: T.creamDim, fontSize: 13, lineHeight: 20, marginBottom: 10 },
+  stalledRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  stalledLabel: {
+    color: T.creamDim, fontSize: 10, fontWeight: "600",
+    textTransform: "uppercase", letterSpacing: 0.6,
+  },
+  stalledText: { color: T.creamDim, fontSize: 12, flexShrink: 1 },
+  stalledUrgent: { color: T.amberHi },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   date: { color: T.creamFaint, fontSize: 11 },
   watchedBadge: {
