@@ -109,15 +109,26 @@ export default function CivicMapScreen() {
       {probe && mapFailed(probe) && !error ? (
         <View style={s.notice}>
           <Text style={s.errorTitle}>The map didn’t draw on this device</Text>
-          <Text style={s.statusText}>You can open it in your browser instead.</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open the civic map in your browser"
-            onPress={() => Linking.openURL(uri.replace("native=1&", "").replace("?native=1", "?"))}
-            style={s.retry}
-          >
-            <Text style={s.retryText}>Open in browser</Text>
-          </Pressable>
+          {probe.webgl2 ? (
+            <>
+              <Text style={s.statusText}>You can open it in your browser instead.</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open the civic map in your browser"
+                onPress={() => Linking.openURL(uri.replace("native=1&", "").replace("?native=1", "?"))}
+                style={s.retry}
+              >
+                <Text style={s.retryText}>Open in browser</Text>
+              </Pressable>
+            </>
+          ) : (
+            // The map library draws with WebGL 2 only. A phone whose browser
+            // lacks it shows the same blank map in the browser, so sending
+            // the resident there would only repeat the failure.
+            <Text style={s.statusText}>
+              This phone’s browser can’t draw the map: it needs a graphics feature (WebGL 2) that isn’t available here. Everything on the map is also in your feed.
+            </Text>
+          )}
           {/* Plain facts for a bug report; small on purpose. */}
           <Text style={s.diag} selectable>
             {`webgl2 ${probe.webgl2 ? "yes" : "no"} · webgl ${probe.webgl ? "yes" : "no"} · worker ${probe.worker} · canvas ${probe.canvas} · tiles ${probe.tiles}`}
@@ -160,7 +171,7 @@ const s = StyleSheet.create({
     backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
   },
   diag: { color: T.creamFaint, fontSize: 10, lineHeight: 14, textAlign: "center", marginTop: 4 },
-  statusText: { color: T.creamDim, fontSize: 13 },
+  statusText: { color: T.creamDim, fontSize: 13, textAlign: "center", lineHeight: 19 },
   errorTitle: { color: T.cream, fontSize: 16, fontWeight: "600" },
   retry: {
     marginTop: 4,
