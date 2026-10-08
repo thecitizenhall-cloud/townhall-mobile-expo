@@ -129,7 +129,7 @@ export default function FeedScreen() {
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
-  const [filter, setFilter] = useState<"all" | "issue" | "escalated" | "bulletin" | "near">("all");
+  const [filter, setFilter] = useState<"all" | "escalated" | "bulletin" | "near">("all");
   const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [slugTown, setSlugTown] = useState<string | null>(null);
@@ -604,11 +604,6 @@ export default function FeedScreen() {
       ...concernCards.map((c) => ({ type: "civic" as const, data: c })),
       ...others,
     ];
-  } else if (filter === "issue") {
-    // The council record as the server ordered it. This used to re-filter the
-    // same ten items that had already arrived, which made the pill mean "hide
-    // the posts" rather than "show me council matters".
-    streamItems = concernCards.map((c) => ({ type: "civic" as const, data: c }));
   } else if (filter === "bulletin") {
     streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
   } else if (filter === "escalated") {
@@ -673,7 +668,6 @@ export default function FeedScreen() {
   const filterTabs = [
     { key: "all", label: "All", show: true },
     { key: "map", label: "🗺 Map", show: true },
-    { key: "issue", label: "Council", show: concernCards.length > 0 },
     { key: "near", label: "📍 Near me", show: true },
     { key: "escalated", label: "Escalated", show: hasEscalated },
     { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
