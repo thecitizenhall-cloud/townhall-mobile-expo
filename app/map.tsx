@@ -49,6 +49,12 @@ const MAP_PROBE = `
 true;
 `;
 
+// The web map page reports its own failure when it runs inside the app
+// (?native=1): { type: "map-error", reason, message }. reason is "no-webgl2",
+// "load" (the library would not load or parse), "construct" or "no-load".
+// When this arrives there is no need to wait for the probe.
+type PageError = { reason: string; message?: string };
+
 type Probe = { webgl2: boolean; webgl: boolean; worker: string; canvas: string; tiles: number; errors: string[] };
 
 // Drawn = there is a canvas with a size and the map asked for at least one tile.
@@ -62,6 +68,13 @@ export default function CivicMapScreen() {
   const [error, setError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [probe, setProbe] = useState<Probe | null>(null);
+  const [pageError, setPageError] = useState<PageError | null>(null);
+  const failed = !!pageError || (!!probe && mapFailed(probe));
+  // "no-webgl2" and "load" are the browser itself being unable to run the map,
+  // so the system browser on the same phone would fail the same way.
+  const browserCannot = pageError
+    ? pageError.reason === "no-webgl2" || pageError.reason === "load"
+    : !!probe && !probe.webgl2;
 
   const uri = useMemo(() => {
     const rawMuni = Array.isArray(params.muni) ? params.muni[0] : params.muni;
@@ -80,12 +93,16 @@ export default function CivicMapScreen() {
           setLoading(true);
           setError(false);
           setProbe(null);
+          setPageError(null);
         }}
         injectedJavaScriptBeforeContentLoaded={MAP_PROBE}
         onMessage={(event) => {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg?.type === "map-probe") setProbe(msg as Probe);
+            else if (msg?.type === "map-error") {
+              setPageError({ reason: String(msg.reason ?? "unknown"), message: msg.message ? String(msg.message).slice(0, 200) : undefined });
+            }
           } catch { /* not ours */ }
         }}
         // WebGL content in an Android WebView needs a hardware layer.
@@ -106,10 +123,10 @@ export default function CivicMapScreen() {
           <Text style={s.statusText}>Loading civic map…</Text>
         </View>
       ) : null}
-      {probe && mapFailed(probe) && !error ? (
+      {failed && !error ? (
         <View style={s.notice}>
           <Text style={s.errorTitle}>The map didn’t draw on this device</Text>
-          {probe.webgl2 ? (
+          {!browserCannot ? (
             <>
               <Text style={s.statusText}>You can open it in your browser instead.</Text>
               <Pressable
@@ -122,17 +139,19 @@ export default function CivicMapScreen() {
               </Pressable>
             </>
           ) : (
-            // The map library draws with WebGL 2 only. A phone whose browser
-            // lacks it shows the same blank map in the browser, so sending
-            // the resident there would only repeat the failure.
+            // The map library needs WebGL 2 and a recent browser engine. A
+            // phone without them shows the same blank map in its browser, so
+            // sending the resident there would only repeat the failure.
             <Text style={s.statusText}>
-              This phone’s browser can’t draw the map: it needs a graphics feature (WebGL 2) that isn’t available here. Everything on the map is also in your feed.
+              This phone’s browser can’t draw the map: it needs newer graphics support than is available here.
             </Text>
           )}
           {/* Plain facts for a bug report; small on purpose. */}
           <Text style={s.diag} selectable>
-            {`webgl2 ${probe.webgl2 ? "yes" : "no"} · webgl ${probe.webgl ? "yes" : "no"} · worker ${probe.worker} · canvas ${probe.canvas} · tiles ${probe.tiles}`}
-            {probe.errors.length ? `\n${probe.errors.join("\n")}` : ""}
+            {pageError ? `page: ${pageError.reason}${pageError.message ? ` (${pageError.message})` : ""}` : ""}
+            {pageError && probe ? "\n" : ""}
+            {probe ? `webgl2 ${probe.webgl2 ? "yes" : "no"} · webgl ${probe.webgl ? "yes" : "no"} · worker ${probe.worker} · canvas ${probe.canvas} · tiles ${probe.tiles}` : ""}
+            {probe?.errors.length ? `\n${probe.errors.join("\n")}` : ""}
           </Text>
         </View>
       ) : null}
