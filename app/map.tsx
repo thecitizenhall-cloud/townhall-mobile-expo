@@ -142,9 +142,24 @@ export default function CivicMapScreen() {
             // The map library needs WebGL 2 and a recent browser engine. A
             // phone without them shows the same blank map in its browser, so
             // sending the resident there would only repeat the failure.
-            <Text style={s.statusText}>
-              This phone’s browser can’t draw the map: it needs newer graphics support than is available here.
-            </Text>
+            <>
+              <Text style={s.statusText}>
+                This phone’s browser can’t draw the map: it needs newer graphics support than is available here.
+              </Text>
+              {/* "load" is usually an old browser that cannot read the map
+                  code, but a dropped download fails the same way, so that
+                  one case gets a retry. */}
+              {pageError?.reason === "load" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry loading civic map"
+                  onPress={() => setReloadKey((value) => value + 1)}
+                  style={s.retry}
+                >
+                  <Text style={s.retryText}>Try again</Text>
+                </Pressable>
+              ) : null}
+            </>
           )}
           {/* Plain facts for a bug report; small on purpose. */}
           <Text style={s.diag} selectable>
