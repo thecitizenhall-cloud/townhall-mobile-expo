@@ -5,11 +5,17 @@ import { WebView } from "react-native-webview";
 import { SITE_URL } from "../lib/config";
 import { T } from "../lib/theme";
 
-// The page can load while the map on it stays blank: MapLibre draws nothing,
-// and says nothing, when its worker or WebGL is unavailable. From the app that
-// looked like a working header over an empty screen with no way to tell why.
-// This runs inside the page, collects the reasons a map can fail to draw, and
-// reports once so the screen can say so and offer the browser instead.
+// The page can load while the map on it stays blank. From the app that looked
+// like a working header over an empty screen with no way to tell why. The page
+// now reports its own failures (see PageError below); this probe is the
+// backstop for a failure the page does not notice. It runs inside the page
+// and reports once: whether a map canvas exists and has a size, plus readings
+// that are printed for a bug report but decide nothing.
+//
+// It does NOT test for a worker file or infer anything from WebGL 2. Both did
+// once, against a version of the web map that needed them; the web map has
+// since gone back to a library version that needs neither, and a probe that
+// keeps testing for them reports a failure over a map that drew.
 const MAP_PROBE = `
 (function () {
   var errors = [];
@@ -18,14 +24,6 @@ const MAP_PROBE = `
   window.addEventListener("unhandledrejection", function (e) { note((e.reason && e.reason.message) || e.reason || "rejection"); });
   var origError = console.error;
   console.error = function () { note(Array.prototype.join.call(arguments, " ")); origError.apply(console, arguments); };
-
-  var worker = "untested";
-  try {
-    var w = new Worker("/maplibre/maplibre-gl-worker.mjs", { type: "module" });
-    worker = "started";
-    w.onerror = function (e) { worker = "failed" + (e && e.message ? ": " + String(e.message).slice(0, 80) : ""); };
-    setTimeout(function () { try { w.terminate(); } catch (_) {} }, 9000);
-  } catch (e) { worker = "unsupported: " + String(e && e.message).slice(0, 80); }
 
   function gl(kind) { try { return !!document.createElement("canvas").getContext(kind); } catch (_) { return false; } }
 
@@ -39,7 +37,6 @@ const MAP_PROBE = `
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: "map-probe",
       webgl2: gl("webgl2"), webgl: gl("webgl"),
-      worker: worker,
       canvas: box ? Math.round(box.width) + "x" + Math.round(box.height) : "none",
       tiles: tiles,
       errors: errors,
@@ -50,16 +47,19 @@ true;
 `;
 
 // The web map page reports its own failure when it runs inside the app
-// (?native=1): { type: "map-error", reason, message }. reason is "no-webgl2",
-// "load" (the library would not load or parse), "construct" or "no-load".
-// When this arrives there is no need to wait for the probe.
+// (?native=1): { type: "map-error", reason, message }. reason is "no-webgl2"
+// (the name is historical: the page sends it when the browser offers neither
+// WebGL 2 nor WebGL 1), "load" (the library would not load or parse),
+// "construct" or "no-load". When this arrives there is no need to wait for
+// the probe.
 type PageError = { reason: string; message?: string };
 
-type Probe = { webgl2: boolean; webgl: boolean; worker: string; canvas: string; tiles: number; errors: string[] };
+type Probe = { webgl2: boolean; webgl: boolean; canvas: string; tiles: number; errors: string[] };
 
-// Drawn = there is a canvas with a size and the map asked for at least one tile.
+// Not drawn = no map canvas, or one with no size. Nothing else in the probe
+// is allowed to decide this.
 function mapFailed(p: Probe): boolean {
-  return p.canvas === "none" || /(^|x)0$|^0x/.test(p.canvas) || p.tiles === 0 || p.worker.startsWith("failed") || p.worker.startsWith("unsupported");
+  return p.canvas === "none" || /(^|x)0$|^0x/.test(p.canvas);
 }
 
 export default function CivicMapScreen() {
@@ -70,11 +70,11 @@ export default function CivicMapScreen() {
   const [probe, setProbe] = useState<Probe | null>(null);
   const [pageError, setPageError] = useState<PageError | null>(null);
   const failed = !!pageError || (!!probe && mapFailed(probe));
-  // "no-webgl2" and "load" are the browser itself being unable to run the map,
-  // so the system browser on the same phone would fail the same way.
-  const browserCannot = pageError
-    ? pageError.reason === "no-webgl2" || pageError.reason === "load"
-    : !!probe && !probe.webgl2;
+  // Only the page can say the browser itself is unable to run the map, in
+  // which case the system browser on the same phone would fail the same way.
+  // The probe's WebGL readings are not used for this: a phone without WebGL 2
+  // draws the map perfectly well on WebGL 1.
+  const browserCannot = pageError?.reason === "no-webgl2" || pageError?.reason === "load";
 
   const uri = useMemo(() => {
     const rawMuni = Array.isArray(params.muni) ? params.muni[0] : params.muni;
@@ -139,9 +139,9 @@ export default function CivicMapScreen() {
               </Pressable>
             </>
           ) : (
-            // The map library needs WebGL 2 and a recent browser engine. A
-            // phone without them shows the same blank map in its browser, so
-            // sending the resident there would only repeat the failure.
+            // The page reported that this browser cannot run the map at all.
+            // The phone's own browser would show the same thing, so sending
+            // the resident there would only repeat the failure.
             <>
               <Text style={s.statusText}>
                 This phone’s browser can’t draw the map: it needs newer graphics support than is available here.
@@ -165,7 +165,7 @@ export default function CivicMapScreen() {
           <Text style={s.diag} selectable>
             {pageError ? `page: ${pageError.reason}${pageError.message ? ` (${pageError.message})` : ""}` : ""}
             {pageError && probe ? "\n" : ""}
-            {probe ? `webgl2 ${probe.webgl2 ? "yes" : "no"} · webgl ${probe.webgl ? "yes" : "no"} · worker ${probe.worker} · canvas ${probe.canvas} · tiles ${probe.tiles}` : ""}
+            {probe ? `webgl2 ${probe.webgl2 ? "yes" : "no"} · webgl ${probe.webgl ? "yes" : "no"} · canvas ${probe.canvas} · tiles ${probe.tiles}` : ""}
             {probe?.errors.length ? `\n${probe.errors.join("\n")}` : ""}
           </Text>
         </View>
