@@ -6,6 +6,8 @@ import { WebView } from "react-native-webview";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { attestationStatement, recordAttestation } from "../../lib/attestation";
+import { detectDistrict } from "../../lib/detectDistrict";
+import { setMyDistrictId } from "../../lib/district";
 import { T } from "../../lib/theme";
 
 // The ZK proof is generated in a WebView using the same snarkjs + WASM artifacts
@@ -38,11 +40,27 @@ async function seedWatchers(neighborhoodId: string, accessToken: string | undefi
   } catch { /* non-blocking */ }
 }
 
+// After a successful proof, the coordinates it was built from are known to be
+// inside the resident's neighborhood, which makes them better evidence of
+// their election district than the unchecked GPS fix the neighborhood step
+// used. So this one may CORRECT an existing district, not only fill an empty
+// one. Only for a real GPS fix: when location was unavailable the proof is
+// built on the neighborhood's centre, which would give every resident the
+// same district. Resolved on the device; only the district id is stored.
+// Never blocks or fails the verification it follows.
+async function correctDistrictFromProof(userId: string, lat: number, lng: number) {
+  try {
+    const district = await detectDistrict(lat, lng);
+    if (district?.id) await setMyDistrictId(userId, district.id);
+  } catch { /* best effort */ }
+}
+
 export default function OnboardingZKProof() {
   const params = useLocalSearchParams<{
     neighborhoodId: string;
     neighborhoodName: string;
     cityId: string;
+    gps?: string;
     lat: string;
     lng: string;
   }>();
@@ -152,6 +170,10 @@ export default function OnboardingZKProof() {
           console.warn("[zk] attestation record failed after verification:", attestErr);
         }
         seedWatchers(params.neighborhoodId, session?.access_token, user.id); // deliberately not awaited
+        const lat = parseFloat(params.lat), lng = parseFloat(params.lng);
+        if (params.gps === "1" && Number.isFinite(lat) && Number.isFinite(lng)) {
+          correctDistrictFromProof(user.id, lat, lng); // deliberately not awaited
+        }
         router.replace("/onboarding/welcome");
         return;
       }

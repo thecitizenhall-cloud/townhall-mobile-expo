@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
-import { setMyDistrictId } from "../../lib/district";
+import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase } from "../../lib/supabase";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { escapeLike } from "../../lib/escapeLike";
@@ -161,6 +161,12 @@ export default function OnboardingNeighborhood() {
       // upsert, not update: if the signup trigger ever failed to create the
       // profiles row, update() matches 0 rows silently and the resident bounces
       // back to onboarding forever (same footgun web's OnboardingScreen guards).
+      // Read before the write below replaces it: a resident who is changing
+      // neighborhood has a district that belongs to the old one.
+      const { data: before } = await supabase.from("profiles")
+        .select("neighborhood_id").eq("id", user.id).maybeSingle();
+      const changedNeighborhood = !!before?.neighborhood_id && before.neighborhood_id !== hood.id;
+
       const { error: profileErr } = await supabase.from("profiles").upsert({
         id: user.id,
         neighborhood_id: hood.id,
@@ -180,7 +186,18 @@ export default function OnboardingNeighborhood() {
       // District goes to its own table (migration 106), never onto profiles —
       // profiles is anon-readable in full. Kept OUT of the upsert above so a
       // district failure can never take onboarding's neighborhood write with it.
-      await setMyDistrictId(user.id, district_id);
+      // Fill a MISSING district, or replace one left over from a different
+      // neighborhood. Otherwise leave it: this fix is the phone's GPS position
+      // and nothing has checked it yet, so it must not replace a district that
+      // a residency proof has since confirmed (zk-proof.tsx writes that one).
+      // It is still worth writing here: most residents only read, never
+      // generate a proof, and would otherwise have no district at all. The
+      // district only orders the feed; it gates nothing.
+      try {
+        if (district_id && (changedNeighborhood || !(await getMyDistrictId(user.id)))) {
+          await setMyDistrictId(user.id, district_id);
+        }
+      } catch { /* best effort: never holds up onboarding */ }
 
       if (verify !== "1") {
         // Initial onboarding: neighborhood_id is now saved, so enter and read.
@@ -206,6 +223,9 @@ export default function OnboardingNeighborhood() {
           // Fallback chain mirrors web: real GPS → neighborhood center → Jackson.
           // A proof built on the neighborhood center still verifies (the center is
           // inside the boundary) — fine for town-level residency when GPS is denied.
+          // Whether lat/lng below are a real GPS fix rather than a fallback
+          // centre. Only a real fix may be used to set a district.
+          gps: coords ? "1" : "0",
           lat: (coords?.lat ?? hood.center_lat ?? JACKSON_LAT).toString(),
           lng: (coords?.lng ?? hood.center_lng ?? JACKSON_LNG).toString(),
         },
