@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { WebView } from "react-native-webview";
+import { muniLabel } from "../lib/cardArea";
 import { SITE_URL } from "../lib/config";
 import { T } from "../lib/theme";
 
@@ -76,15 +77,20 @@ export default function CivicMapScreen() {
   // draws the map perfectly well on WebGL 1.
   const browserCannot = pageError?.reason === "no-webgl2" || pageError?.reason === "load";
 
+  const rawMuni = Array.isArray(params.muni) ? params.muni[0] : params.muni;
+  // The app's own header carries the title and the back button, so the page
+  // inside does not need to repeat either. "Jackson, NJ" -> "Jackson".
+  const town = muniLabel(rawMuni).split(",")[0];
+
   const uri = useMemo(() => {
-    const rawMuni = Array.isArray(params.muni) ? params.muni[0] : params.muni;
     const muni = rawMuni || "jackson_nj";
     const query = new URLSearchParams({ native: "1", muni });
     return `${SITE_URL}/map?${query.toString()}`;
-  }, [params.muni]);
+  }, [rawMuni]);
 
   return (
     <View style={s.root}>
+      <Stack.Screen options={{ title: town ? `${town} civic map` : "Civic map" }} />
       <WebView
         key={reloadKey}
         source={{ uri }}
@@ -116,6 +122,12 @@ export default function CivicMapScreen() {
         javaScriptEnabled
         domStorageEnabled
         allowsBackForwardNavigationGestures
+        // The map handles its own pinch and pan. Without these the whole page
+        // zoomed as well, so the filter bar grew and shrank under the fingers.
+        setBuiltInZoomControls={false}
+        setDisplayZoomControls={false}
+        scalesPageToFit={false}
+        overScrollMode="never"
       />
       {loading && !error ? (
         <View style={s.overlay} pointerEvents="none">
