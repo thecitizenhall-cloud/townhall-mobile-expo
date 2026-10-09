@@ -6,7 +6,6 @@ import {
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
-import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
@@ -22,7 +21,6 @@ import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNe
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
 import CivicPulse from "../../components/CivicPulse";
-import { detectDistrict } from "../../lib/detectDistrict";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import { WebView } from "react-native-webview";
@@ -59,16 +57,6 @@ const REPORT_TYPES = [
 type FeedItem =
   | { type: "civic"; data: CivicItem }
   | { type: "post"; data: any };
-
-// Straight-line miles (Haversine) for the opt-in "Near me" sort. All client-side;
-// the resident's location never leaves the device.
-function milesBetween(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 3958.8, toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
 
 // Mirrors web's TownScreen.jsx / civic-engine's _normalize_road exactly — the
 // server matches on road_name_normalized as stored, so this must produce the
@@ -129,8 +117,7 @@ export default function FeedScreen() {
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
-  const [filter, setFilter] = useState<"all" | "escalated" | "bulletin" | "near">("all");
-  const [nearbyCards, setNearbyCards] = useState<CivicItem[]>([]);
+  const [filter, setFilter] = useState<"all" | "bulletin">("all");
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [slugTown, setSlugTown] = useState<string | null>(null);
   useEffect(() => {
@@ -141,7 +128,9 @@ export default function FeedScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   // TOWN-WIDE counts from town_feed, never measured off the loaded array.
   const [feedCounts, setFeedCounts] = useState<FeedCounts>({ ...EMPTY_COUNTS });
-  const [bandFilter, setBandFilter] = useState<FeedFilter>("all");
+  // The feed always asks town_feed for the whole record, in the order the
+  // server ranks it. The row of band pills that used to change this is gone.
+  const bandFilter: FeedFilter = "all";
   const [bandLoading, setBandLoading] = useState(false);
   const [feedHasMore, setFeedHasMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -483,33 +472,6 @@ export default function FeedScreen() {
     finally { setGeocodingReport(false); }
   }
 
-  // Pressing a band pill asks the town a question; it does not re-slice the
-  // twenty cards already in hand. The first load is done by the main loader, so
-  // this fires only on a change.
-  const bandFilterRef = useRef<FeedFilter>(bandFilter);
-  useEffect(() => {
-    if (bandFilterRef.current === bandFilter) return;
-    bandFilterRef.current = bandFilter;
-    let cancelled = false;
-    setBandLoading(true);
-    loadTownFeed(neighborhoodSlug, { filter: bandFilter, limit: 20 })
-      .then((res) => {
-        if (cancelled) return;
-        // Keep what is on screen: replacing it with a failed call's empty
-        // result would show this band as having nothing in it.
-        if (res.error) {
-          console.warn("town_feed failed:", res.error);
-          setLoadError(RECORD_LOAD_ERROR);
-          return;
-        }
-        setLoadError(null);
-        setFeedCounts(res.counts);
-        setFeedHasMore(res.hasMore);
-        setCivic((prev) => [...res.items, ...prev.filter((c) => c.source !== "civic_engine")]);
-      })
-      .finally(() => { if (!cancelled) setBandLoading(false); });
-    return () => { cancelled = true; };
-  }, [bandFilter, neighborhoodSlug]);
 
   useEffect(() => {
     if (!reportMapReady || !reportCoords) return;
@@ -606,10 +568,6 @@ export default function FeedScreen() {
     ];
   } else if (filter === "bulletin") {
     streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
-  } else if (filter === "escalated") {
-    streamItems = nonBotPosts.filter((p) => p.escalated).map((p) => ({ type: "post" as const, data: p }));
-  } else if (filter === "near") {
-    streamItems = nearbyCards.map((c) => ({ type: "civic" as const, data: c }));
   }
 
   if (myRoads.length) {
@@ -618,19 +576,6 @@ export default function FeedScreen() {
       : it
     );
   }
-
-  const hasEscalated = nonBotPosts.some((p) => p.escalated);
-  // Band pills: town_feed PARAMETERS with the town-wide count beside each. A
-  // band with nothing in it is not offered — "Past due 0" invites a tap that
-  // answers with an empty list, which reads as a broken feed rather than as
-  // good news.
-  const bandTabs = [
-    { key: "all",       label: "All",           count: feedCounts.n_total,     show: true },
-    { key: "deciding",  label: "Being decided", count: feedCounts.n_deciding,  show: feedCounts.n_deciding > 0 },
-    { key: "past_due",  label: "Past due",      count: feedCounts.n_past_due,  show: feedCounts.n_past_due > 0 },
-    { key: "new",       label: "New to you",    count: feedCounts.n_new,       show: feedCounts.n_new > 0 },
-    { key: "following", label: "Following",     count: feedCounts.n_following, show: feedCounts.n_following > 0 },
-  ].filter((t) => t.show);
 
   // Reaching past the first twenty. town_feed takes p_offset and returns
   // has_more; both were plumbed through lib/townFeed.ts and never read, so the
@@ -668,83 +613,9 @@ export default function FeedScreen() {
   const filterTabs = [
     { key: "all", label: "All", show: true },
     { key: "map", label: "🗺 Map", show: true },
-    { key: "near", label: "📍 Near me", show: true },
-    { key: "escalated", label: "Escalated", show: hasEscalated },
     { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
     { key: "budget", label: "💰 Budget", show: true },
   ].filter((t) => t.show);
-
-  // Opt-in "Near me": request location on tap, load surfaced parcel-mapped cards,
-  // and rank by true distance (distance IS the filter — no neighborhood bound).
-  async function enableNearMe() {
-    try {
-      // Anchor on the resident's VERIFIED location — the center of the
-      // neighborhood they proved they live in — not the phone's current GPS
-      // position (which may be at work, traveling, or in another town). The exact
-      // verified coordinate is never stored (ZK boundary), so the neighborhood
-      // center is the privacy-safe home anchor; no location prompt needed. Guests,
-      // and residents whose neighborhood has no stored center, fall back to GPS.
-      let lat: number | null = null, lon: number | null = null;
-      if (currentUser?.id && profile?.neighborhood_id) {
-        const { data: hood } = await supabase.from("neighborhoods")
-          .select("center_lat, center_lng").eq("id", profile.neighborhood_id).maybeSingle();
-        if (hood?.center_lat != null && hood?.center_lng != null) {
-          lat = hood.center_lat; lon = hood.center_lng;
-        }
-      }
-      if (lat == null || lon == null) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") { showToast("Location needed for Near me"); return; }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = pos.coords.latitude; lon = pos.coords.longitude;
-      }
-      const aLat: number = lat, aLon: number = lon; // non-null past the guard; safe inside closures
-      // Opportunistic B3 backfill: residents onboarded before B3 have no
-      // district_id. Resolve their district LOCALLY from the anchor point
-      // (point-in-polygon; never sent out) and store just the id. Fire-and-forget,
-      // one-shot (skips if already set). Activates B4 for them.
-      // profiles.district_id is frozen to null by migration 106, so it can no
-      // longer answer "do they have one" — resident_districts does.
-      if (currentUser?.id) {
-        getMyDistrictId(currentUser.id)
-          .then((existing) => (existing ? null : detectDistrict(aLat, aLon)))
-          .then((d) => { if (d?.id) return setMyDistrictId(currentUser.id, d.id); })
-          .catch(() => {});
-      }
-      const { data } = await supabase.from("concern_cards")
-        .select("id,title,summary,outcome_signal,meeting_date,affected_area,parcel_lat,parcel_lon")
-        .not("parcel_lat", "is", null).eq("surfaces_to_feed", true).eq("archived", false).limit(300);
-      // external_id is REQUIRED by CivicItem and is what keyExtractor builds the
-      // FlatList key from. It was missing here, so every Near-me row keyed to
-      // "civic-undefined" and VirtualizedList could not tell the rows apart —
-      // after a scroll or a re-render, tapping one card could open another.
-      //
-      // `cc_${id}` deliberately matches cardToCivicItem in lib/townFeed.ts: the
-      // same concern card gets the same key in either lane. Safe because Near-me
-      // REPLACES streamItems rather than merging into it (see the filter switch),
-      // so the two lanes are never in one list at once.
-      //
-      // No `as CivicItem[]` — the cast is what silenced this in the first place,
-      // and tsc will now catch the next field that goes missing.
-      const ranked: CivicItem[] = (data || []).map((c: any) => ({
-        source: "civic_engine" as const,
-        external_id: `cc_${c.id}`,
-        concern_card_id: c.id,
-        tag: "near",
-        title: c.title,
-        body: c.summary,
-        url: null,
-        address: c.affected_area,
-        created_at: c.meeting_date,
-        image_url: null,
-        outcome_signal: c.outcome_signal,
-        _dist: milesBetween(aLat, aLon, c.parcel_lat, c.parcel_lon),
-      }));
-      ranked.sort((a, b) => (a._dist ?? 9e9) - (b._dist ?? 9e9));
-      setNearbyCards(ranked.slice(0, 30));
-      setFilter("near");
-    } catch { showToast("Couldn't get your location"); }
-  }
 
   function openCivic(c: CivicItem) {
     if (c.concern_card_id) router.push({ pathname: "/card/[id]", params: { id: c.concern_card_id } });
@@ -867,25 +738,6 @@ export default function FeedScreen() {
                 only; not on the first-session arrival, which has its own frame. */}
             {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
 
-            {/* Band pills — what the record is DOING. Each is an RPC parameter;
-                the number is the town-wide count, not the size of the page. */}
-            {bandTabs.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
-                {bandTabs.map((t) => (
-                  <Pressable key={t.key}
-                    disabled={bandLoading}
-                    onPress={() => setBandFilter(t.key as FeedFilter)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: bandFilter === t.key, disabled: bandLoading }}
-                    style={[s.filterPill, bandFilter === t.key && s.filterPillActive]}>
-                    <Text style={[s.filterPillText, bandFilter === t.key && s.filterPillTextActive]}>
-                      {t.label}{t.key !== "all" ? ` ${t.count}` : ""}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
-
             {/* Filter tabs */}
             {filterTabs.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
@@ -894,9 +746,7 @@ export default function FeedScreen() {
                     ? router.push({ pathname: "/map" as any, params: townId ? { muni: townId } : {} })
                     : t.key === "budget"
                       ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */)
-                      : t.key === "near"
-                        ? enableNearMe()
-                        : setFilter(t.key as any)}
+                      : setFilter(t.key as any)}
                     accessibilityRole="button"
                     accessibilityLabel={t.key === "map" ? `Open ${neighborhood} civic map` : undefined}
                     style={[s.filterPill, filter === t.key && s.filterPillActive]}>
@@ -934,8 +784,7 @@ export default function FeedScreen() {
                 </Pressable>
               ) : (
                 <Text style={{ color: T.creamFaint, fontSize: 11 }}>
-                  End of the record · {concernCards.length}{" "}
-                  {bandFilter === "all" ? "matters" : "matching this"}
+                  End of the record · {concernCards.length} matters
                 </Text>
               )}
             </View>
@@ -945,7 +794,6 @@ export default function FeedScreen() {
           <View style={s.empty}>
             <Text style={s.emptyText}>
               {filter === "all" ? `${neighborhood} is quiet right now.\nBe the first to share something.`
-                : filter === "escalated" ? "No escalated posts yet.\nEscalate a post to move it to the civic tracker."
                 : "Nothing here right now."}
             </Text>
           </View>
