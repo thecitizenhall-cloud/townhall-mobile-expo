@@ -187,12 +187,18 @@ export default function OnboardingNeighborhood() {
       // profiles is anon-readable in full. Kept OUT of the upsert above so a
       // district failure can never take onboarding's neighborhood write with it.
       // Fill a MISSING district, or replace one left over from a different
-      // neighborhood. Otherwise leave it: this fix is the phone's GPS position
-      // and nothing has checked it yet, so it must not replace a district that
-      // a residency proof has since confirmed (zk-proof.tsx writes that one).
-      // It is still worth writing here: most residents only read, never
-      // generate a proof, and would otherwise have no district at all. The
-      // district only orders the feed; it gates nothing.
+      // neighborhood. Otherwise leave it: every GPS fix is only "where the
+      // phone was once", so a later one is no better evidence of where the
+      // resident lives than the first, and replacing on every pass is just
+      // last-write-wins. This is the only place the district is written, and
+      // only ever from a real GPS fix (`coords`), never from a neighborhood
+      // centre, which would give every resident the same district. A residency
+      // proof deliberately does not rewrite it: the proof shows the phone was
+      // inside the neighborhood, and a town-wide neighborhood says nothing
+      // about which district is home. It is worth writing here because most
+      // residents only read, never generate a proof, and would otherwise have
+      // no district at all. The district only orders the feed; it gates
+      // nothing.
       try {
         if (district_id && (changedNeighborhood || !(await getMyDistrictId(user.id)))) {
           await setMyDistrictId(user.id, district_id);
@@ -223,9 +229,6 @@ export default function OnboardingNeighborhood() {
           // Fallback chain mirrors web: real GPS → neighborhood center → Jackson.
           // A proof built on the neighborhood center still verifies (the center is
           // inside the boundary) — fine for town-level residency when GPS is denied.
-          // Whether lat/lng below are a real GPS fix rather than a fallback
-          // centre. Only a real fix may be used to set a district.
-          gps: coords ? "1" : "0",
           lat: (coords?.lat ?? hood.center_lat ?? JACKSON_LAT).toString(),
           lng: (coords?.lng ?? hood.center_lng ?? JACKSON_LNG).toString(),
         },
