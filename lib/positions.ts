@@ -48,9 +48,18 @@ export async function replacePosition(
   }
   // A failed restore is not proof of loss: another submission may have put a
   // position in between. Only say it is gone if there really is none.
-  const { data: still } = await supabase.from("disagreements")
+  const { data: still, error: readErr } = await supabase.from("disagreements")
     .select("id").eq("user_id", userId).eq("issue_id", issueId).limit(1);
-  if (still && still.length > 0) return { ok: false, error: base, reason, lost: false };
+  if (readErr || !still) {
+    // Unknown, so claim neither outcome and leave the screen as it is.
+    return {
+      ok: false,
+      error: `Your new position didn't save, and we couldn't check whether your earlier one is still there. Reopen this issue to see. ${base}`,
+      reason,
+      lost: false,
+    };
+  }
+  if (still.length > 0) return { ok: false, error: base, reason, lost: false };
   return {
     ok: false,
     error: `Your earlier position was removed and the new one didn't save. ${base}`,
