@@ -33,6 +33,18 @@ const generalFirst = (a: Neighborhood, b: Neighborhood) =>
   a.name.localeCompare(b.name);
 
 // Final fallback when neither GPS nor a neighborhood center is available —
+// What the resident is told when detection does not find their town. Every
+// one of these used to end the same way: the spinner stopped and the search
+// box appeared, with nothing to say detection had run, so a denied permission
+// looked the same as a town we do not cover. Same wording as web's
+// geoFailureMessage (lib/onboardingFlow.mjs), with "browser" made "phone".
+type GeoFailure = "denied" | "no-town" | "failed";
+function geoFailureMessage(code: GeoFailure): string {
+  if (code === "denied") return "Location access is off for Townhall, so we couldn't find your town. Search for it below, or allow location for Townhall in your phone's settings.";
+  if (code === "no-town") return "We couldn't find a town we cover near your location. Search for it below.";
+  return "We couldn't get your location. Search for your town below.";
+}
+
 // Jackson Township center, matching the web app (OnboardingScreen.jsx).
 const JACKSON_LAT = 40.103;
 const JACKSON_LNG = -74.349;
@@ -46,6 +58,7 @@ export default function OnboardingNeighborhood() {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Neighborhood[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoNotice, setGeoNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const searchSeq = useRef(0);
 
@@ -58,6 +71,7 @@ export default function OnboardingNeighborhood() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
+        setGeoNotice(geoFailureMessage("denied"));
         setDetecting(false);
         return;
       }
@@ -83,8 +97,8 @@ export default function OnboardingNeighborhood() {
       // of Lakewood, CO could be offered Lakewood Township, NJ. Whole-name
       // case-insensitive equality (ilike with the wildcards escaped), because
       // `state` is stored as both "NJ" and "nj". No match means manual search.
-      if (!cityName || !stateCode) return;
-      const { data: cities } = await supabase
+      if (!cityName || !stateCode) { setGeoNotice(geoFailureMessage("no-town")); return; }
+      const { data: cities, error: citiesErr } = await supabase
         .from("cities")
         .select("id")
         .ilike("name", escapeLike(cityName))
@@ -92,12 +106,15 @@ export default function OnboardingNeighborhood() {
 
       // Every matching row, not the first: (name, state) is not unique in
       // `cities`, and only one of the duplicates may carry neighborhoods.
+      // A failed lookup is not "no town here"; say what actually happened.
+      if (citiesErr) throw citiesErr;
       if (cities && cities.length > 0) {
-        const { data } = await supabase
+        const { data, error: hoodsErr } = await supabase
           .from("neighborhoods")
           .select(HOOD_COLUMNS)
           .in("city_id", cities.map(c => c.id))
           .limit(50);
+        if (hoodsErr) throw hoodsErr;
         const hoods = ((data || []) as Neighborhood[]).sort(generalFirst);
 
         if (hoods.length > 0) {
@@ -106,10 +123,12 @@ export default function OnboardingNeighborhood() {
             ? hoods.find(h => h.name.toLowerCase().includes(suburb.toLowerCase())) || hoods[0]
             : hoods[0];
           setDetectedNeighborhood(match);
+          return;
         }
       }
+      setGeoNotice(geoFailureMessage("no-town"));
     } catch {
-      // silent — user can search manually
+      setGeoNotice(geoFailureMessage("failed"));
     } finally {
       setDetecting(false);
     }
@@ -277,6 +296,9 @@ export default function OnboardingNeighborhood() {
         </View>
       ) : (
         <View style={s.searchWrap}>
+          {geoNotice ? (
+            <Text style={s.geoNotice} accessibilityLiveRegion="polite">{geoNotice}</Text>
+          ) : null}
           <TextInput
             style={s.input}
             value={search}
@@ -316,6 +338,7 @@ const s = StyleSheet.create({
   sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 28 },
   detecting: { flexDirection: "row", alignItems: "center", gap: 12, padding: 20 },
   detectingText: { color: T.creamDim, fontSize: 14 },
+  geoNotice: { color: T.creamDim, fontSize: 13, lineHeight: 19, marginBottom: 10 },
   detected: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14, padding: 20 },
   detectLabel: { color: T.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
   detectName: { color: T.cream, fontSize: 22, fontWeight: "600", marginBottom: 20 },
