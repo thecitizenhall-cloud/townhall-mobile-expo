@@ -504,7 +504,7 @@ export default function IssueDetail() {
     const body = replyText.trim();
     setReplyText("");
     const { error } = await supabase.from("issue_replies").insert({ issue_id: issueId, author_id: currentUser.id, body });
-    if (error) { showToast("Failed to post reply"); setReplyText(body); }
+    if (error) { showToast(writeErrorMessage(error, "reply to this issue")); setReplyText(body); }
     setSubmitting(false);
   }
 
@@ -517,13 +517,14 @@ export default function IssueDetail() {
     if (data) setSubIssues((prev) => [...prev, data]);
   }
 
-  async function postIssueComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }) {
-    if (!body.trim() || !currentUser) return;
+  async function postIssueComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }): Promise<boolean> {
+    if (!body.trim() || !currentUser) return false;
     const { data, error } = await supabase.from("issue_replies")
       .insert({ issue_id: issueId, author_id: currentUser.id, body: body.trim(), stance, sub_issue_id: subId || null })
       .select("*, profiles(display_name)").single();
-    if (error) { showToast("Failed to post"); return; }
+    if (error) { showToast(writeErrorMessage(error, "comment on this issue")); return false; }
     if (data) setReplies((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data]));
+    return true;
   }
 
   async function submitDisagreement() {

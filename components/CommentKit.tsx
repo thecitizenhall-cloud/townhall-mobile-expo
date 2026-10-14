@@ -131,7 +131,9 @@ function StanceComposer({
   currentUser, onPost, placeholder,
 }: {
   currentUser: any;
-  onPost: (args: { body: string; stance: Stance }) => Promise<void>;
+  // Resolve false when the post did not land: the composer then keeps the
+  // resident's words instead of clearing them as if it had.
+  onPost: (args: { body: string; stance: Stance }) => Promise<boolean>;
   placeholder?: string;
 }) {
   const [text, setText] = useState("");
@@ -145,9 +147,10 @@ function StanceComposer({
     if (!body || posting) return;
     setPosting(true);
     try {
-      await onPost({ body, stance });
-      setText("");
-      setStance("neutral");
+      if (await onPost({ body, stance })) {
+        setText("");
+        setStance("neutral");
+      }
     } finally {
       setPosting(false);
     }
@@ -193,7 +196,7 @@ export default function CommentKit({
   comments: KitComment[];
   subIssues: SubIssue[];
   timeAgo?: (d?: string | null) => string;
-  onPost: (args: { body: string; stance: Stance; subId: string | null }) => Promise<void>;
+  onPost: (args: { body: string; stance: Stance; subId: string | null }) => Promise<boolean>;
   onCreateSubIssue: (title: string) => Promise<void>;
 }) {
   const [showAdd, setShowAdd] = useState(false);
