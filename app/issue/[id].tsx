@@ -356,13 +356,19 @@ export default function IssueDetail() {
   async function commitOwnWords() {
     if (!currentUser) return;
     setCommitting(true);
+    const saved = { stake: false, position: false, reply: false };
+    // Clear whatever already saved, so a retry cannot post it a second time.
+    const clearSaved = () => {
+      if (saved.stake) setConfirmStake("");
+      if (saved.position) { setConfirmRecognition(""); setConfirmStance("unsure"); }
+      if (saved.reply) setOwnWordsText("");
+    };
     try {
       // `wrote` must mean a row came back, never that the text was long enough.
       // The stake insert is refused for a resident without a verified address,
       // and this used to set wrote = true regardless, so a stake-only entry
       // that saved nothing anywhere still read "Shared with your neighbours ✓".
       let wrote = false;
-      const saved = { stake: false, position: false, reply: false };
       const failed: string[] = [];
       let refused = false;
       const fail = (what: string, error: any) => {
@@ -425,17 +431,14 @@ export default function IssueDetail() {
       }
 
       // Unless everything went through, the confirm step stays open with
-      // whatever did NOT save still in it, so the resident loses no words and
-      // a retry cannot post the saved parts a second time.
+      // whatever did NOT save still in it, so the resident loses no words.
       const why = refused ? "verify your address first." : "check your connection and try again.";
       if (failed.length === 0 && !wrote) {
         showToast("Nothing recorded — add a bit more");
         return;
       }
       if (failed.length > 0) {
-        if (saved.stake) setConfirmStake("");
-        if (saved.position) { setConfirmRecognition(""); setConfirmStance("unsure"); }
-        if (saved.reply) setOwnWordsText("");
+        clearSaved();
         showToast(wrote
           ? `Partly saved — ${failed.join(" and ")} didn't go through; ${why}`
           : `Not saved — ${why[0].toUpperCase()}${why.slice(1)}`);
@@ -447,6 +450,7 @@ export default function IssueDetail() {
       setOwnWordsText("");
     } catch (e) {
       console.error("commitOwnWords error:", e);
+      clearSaved();
       showToast("Something went wrong");
     } finally {
       setCommitting(false);
