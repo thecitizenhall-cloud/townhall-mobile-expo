@@ -362,6 +362,7 @@ export default function IssueDetail() {
       // and this used to set wrote = true regardless, so a stake-only entry
       // that saved nothing anywhere still read "Shared with your neighbours ✓".
       let wrote = false;
+      const saved = { stake: false, position: false, reply: false };
       const failed: string[] = [];
       let refused = false;
       const fail = (what: string, error: any) => {
@@ -376,7 +377,7 @@ export default function IssueDetail() {
             .update({ body: stakeBody }).eq("id", myStake.id).select("*, profiles:user_id(display_name)").single();
           if (data) {
             setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s)));
-            wrote = true;
+            wrote = saved.stake = true;
           } else fail("your stake", error);
         } else {
           const { data, error } = await supabase.from("issue_stakes")
@@ -386,7 +387,7 @@ export default function IssueDetail() {
             setMyStake(data);
             setStakes((prev) => [data, ...prev]);
             setIssue((prev: any) => ({ ...prev, stake_count: (prev.stake_count || 0) + 1 }));
-            wrote = true;
+            wrote = saved.stake = true;
           } else fail("your stake", error);
         }
       }
@@ -408,7 +409,7 @@ export default function IssueDetail() {
             if (position === "agree") setAgreements((prev) => [row, ...prev]);
             else setDisagreements((prev) => [row, ...prev]);
           }
-          wrote = true;
+          wrote = saved.position = true;
         } else fail("your position", error);
       }
 
@@ -419,21 +420,28 @@ export default function IssueDetail() {
           .select("*, profiles(display_name)").single();
         if (newReply) {
           setReplies((prev) => (prev.some((r) => r.id === newReply.id) ? prev : [...prev, newReply]));
-          wrote = true;
+          wrote = saved.reply = true;
         } else fail("your reply", error);
       }
 
+      // Unless everything went through, the confirm step stays open with
+      // whatever did NOT save still in it, so the resident loses no words and
+      // a retry cannot post the saved parts a second time.
       const why = refused ? "verify your address first." : "check your connection and try again.";
-      if (failed.length === 0) {
-        showToast(wrote ? "Shared with your neighbours ✓" : "Nothing recorded — add a bit more");
-      } else if (wrote) {
-        showToast(`Partly saved — ${failed.join(" and ")} didn't go through; ${why}`);
-      } else {
-        // Nothing saved: leave the confirm step open with the resident's words
-        // still in it, so they lose nothing.
-        showToast(`Not saved — ${why[0].toUpperCase()}${why.slice(1)}`);
+      if (failed.length === 0 && !wrote) {
+        showToast("Nothing recorded — add a bit more");
         return;
       }
+      if (failed.length > 0) {
+        if (saved.stake) setConfirmStake("");
+        if (saved.position) { setConfirmRecognition(""); setConfirmStance("unsure"); }
+        if (saved.reply) setOwnWordsText("");
+        showToast(wrote
+          ? `Partly saved — ${failed.join(" and ")} didn't go through; ${why}`
+          : `Not saved — ${why[0].toUpperCase()}${why.slice(1)}`);
+        return;
+      }
+      showToast("Shared with your neighbours ✓");
       setShowOwnWords(false);
       setInterpretation(null);
       setOwnWordsText("");
