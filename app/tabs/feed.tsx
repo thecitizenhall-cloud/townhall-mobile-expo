@@ -113,7 +113,11 @@ export default function FeedScreen() {
   // that session". Web solves the same problem with an in-memory isFirstTime
   // flag (pages/app.jsx); mobile has no equivalent across a route change.
   const { arrival } = useLocalSearchParams<{ arrival?: string }>();
-  const [verified, setVerified] = useState(true);
+  // null until the residency check resolves. This used to start at true, so
+  // until loadFeed finished, every standing action below went straight to the
+  // database for a resident with no verified address, and RLS refused it there.
+  // A gate must start closed; `hasStanding()` holds the tap until it knows.
+  const [verified, setVerified] = useState<boolean | null>(null);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
@@ -340,8 +344,16 @@ export default function FeedScreen() {
 
   const onRefresh = useCallback(() => loadFeed(true), []);
 
+  // The gate every standing action shares: a guest or an unverified resident
+  // goes to verification; while the check is still running, nothing is sent.
+  function hasStanding(): boolean {
+    if (!currentUser || verified === false) { goVerify(); return false; }
+    if (verified === null) { showToast("Still checking your address — try again in a moment."); return false; }
+    return true;
+  }
+
   async function handleWatchCard(cardId: string) {
-    if (!currentUser || !verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
@@ -356,7 +368,7 @@ export default function FeedScreen() {
   }
 
   async function handleWatchIssue(issueId: string) {
-    if (!currentUser || !verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {
@@ -372,7 +384,7 @@ export default function FeedScreen() {
 
   async function handlePost() {
     if (!draft.trim() || posting) return;
-    if (!currentUser || !verified) { goVerify(); return; }   // MOB-POST-GATE: no crash for anon
+    if (!hasStanding()) return;   // MOB-POST-GATE: no crash for anon
     setPosting(true);
     const { error } = await supabase.from("posts").insert({
       author_id: currentUser.id, neighborhood_id: profile?.neighborhood_id || null,
@@ -401,7 +413,7 @@ export default function FeedScreen() {
 
   async function handleEscalate(post: any) {
     if (!currentUser) return;
-    if (!verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     const title = post.body.length > 100 ? post.body.slice(0, 100) + "…" : post.body;
     const { data: profEsc } = await supabase.from("profiles").select("neighborhood_id, display_name").eq("id", currentUser.id).maybeSingle();
     const escalatorName = profEsc?.display_name || "Resident";
@@ -485,7 +497,7 @@ export default function FeedScreen() {
 
   async function handleReport() {
     if (!reportDesc.trim() || reporting) return;
-    if (!currentUser || !verified) { goVerify(); return; }   // MOB-3: no crash for anon
+    if (!hasStanding()) return;   // MOB-3: no crash for anon
     setReporting(true);
     const { data: prof } = await supabase.from("profiles").select("neighborhood_id, municipality_id").eq("id", currentUser.id).maybeSingle();
     // The resident's own town, resolved against real municipality ids
@@ -678,7 +690,7 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {!verified && (
+            {verified === false && (
               <TouchableOpacity style={s.verifyBanner} onPress={goVerify} activeOpacity={0.8}>
                 <Text style={s.verifyBannerText} numberOfLines={1}>
                   Reading as a guest · <Text style={s.verifyBannerCta}>Verify residency →</Text>
