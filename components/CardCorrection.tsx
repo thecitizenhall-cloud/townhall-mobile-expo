@@ -43,8 +43,15 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
       contact_email: email.trim() ? email.trim().slice(0, 254) : null,
     });
     setBusy(false);
-    // Never show the database's own message here; say what to do instead.
-    if (error) { setErr("Couldn't submit — please email hello@townhallcafe.org."); return; }
+    if (error) {
+      // The one refusal written for a reader, not for us: the per-card rate
+      // limit (web migration 057's trigger). Keep its meaning; emailing would
+      // be the wrong advice. Anything else: say what to do instead.
+      setErr(/too many correction requests/i.test(error.message || "")
+        ? "Too many correction requests for this card right now. Please try again later."
+        : "Couldn't submit — please email hello@townhallcafe.org.");
+      return;
+    }
     setDone(true);
   }
 
