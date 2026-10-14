@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
-import { reservedNameError, clipDisplayName } from "../../lib/displayName";
+import { reservedNameError, clipDisplayName, finalDisplayName } from "../../lib/displayName";
 import { T } from "../../lib/theme";
 
 export default function Register() {
@@ -34,7 +34,7 @@ export default function Register() {
       email: email.trim(),
       password,
       options: {
-        data: { display_name: displayName.trim() },
+        data: { display_name: finalDisplayName(displayName) },
       },
     });
     setLoading(false);

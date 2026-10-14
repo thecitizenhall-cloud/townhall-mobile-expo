@@ -7,7 +7,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import YourIssuesScreen from "./issues";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
-import { reservedNameError, clipDisplayName } from "../../lib/displayName";
+import { reservedNameError, clipDisplayName, finalDisplayName } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { municipalityForSlug } from "../../lib/townOf";
@@ -354,8 +354,9 @@ export default function ProfileScreen() {
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { error } = await supabase.from("profiles").update({ display_name: nameDraft.trim() }).eq("id", user.id);
-      if (!error) { setProfile((p: any) => ({ ...p, display_name: nameDraft.trim() })); setEditingName(false); }
+      const name = finalDisplayName(nameDraft);
+      const { error } = await supabase.from("profiles").update({ display_name: name }).eq("id", user.id);
+      if (!error) { setProfile((p: any) => ({ ...p, display_name: name })); setEditingName(false); }
       // Not error.message: that is the database's text, not the resident's.
       else Alert.alert("Couldn't save", "Your name wasn't changed. Check your connection and try again.");
     }

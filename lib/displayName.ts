@@ -56,6 +56,14 @@ export function reservedNameError(name: string): string | null {
 // DISPLAY_NAME_MAX in lib/onboardingFlow.mjs.
 export const DISPLAY_NAME_MAX = 50;
 
+// While typing: leading spaces are dropped (they would be trimmed anyway, and
+// must not use up the limit); everything else is cut at the limit.
 export function clipDisplayName(name: string): string {
-  return Array.from(name || "").slice(0, DISPLAY_NAME_MAX).join("");
+  return Array.from((name || "").replace(/^\s+/, "")).slice(0, DISPLAY_NAME_MAX).join("");
+}
+
+// What is actually written: trimmed, then held to the limit, in the order the
+// signup trigger uses, so the app never keeps less than the server would.
+export function finalDisplayName(name: string): string {
+  return Array.from((name || "").trim()).slice(0, DISPLAY_NAME_MAX).join("").trim();
 }
