@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Modal, TextInput, KeyboardAvoidingView } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { isStandingRefusal } from "../../lib/writeError";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { isVerifiedForCurrentNeighborhood, goVerify } from "../../lib/residency";
 import { T } from "../../lib/theme";
@@ -118,8 +119,7 @@ export default function BudgetScreen() {
     }).select().single();
     setSubmitting(false);
     if (error) {
-      const denied = error.code === "42501" || /policy|permission|residen/i.test(error.message || "");
-      showToast(denied ? "Verify your residency to raise a civic issue." : "Couldn't raise the issue — try again.");
+      showToast(isStandingRefusal(error) ? "Verify your residency to raise a civic issue." : "Couldn't raise the issue — try again.");
       return;
     }
     setIssueCounts((c) => { const k = lineKey(muni, line); return { ...c, [k]: (c[k] || 0) + 1 }; });

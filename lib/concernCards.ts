@@ -5,6 +5,7 @@
 //   card_watches is the civic-engine watch table
 //   watched_concern_cards is the front-end table for civic_issues watching
 import { supabase } from "./supabase";
+import { failureOf, writeErrorMessage, WriteFailure } from "./writeError";
 
 // The resident's neighborhood SLUG — the text key neighborhood_scores and
 // card_watches use (the notifier seeds/queries by it). profiles stores the
@@ -16,32 +17,41 @@ export async function getResidentNeighborhoodSlug(userId: string): Promise<strin
   return h?.slug ?? null;
 }
 
-export async function watchCivicIssue(userId: string, issueId: string) {
+// Every follow/unfollow helper returns `error` as words a resident can read,
+// never the database's own message, plus `reason` so a caller can tell a
+// standing refusal (no verified address) from anything else. 23505 is an
+// existing follow: already following counts as success.
+type WatchResult = { success: boolean; error: string | null; reason: WriteFailure | null };
+
+function watchResult(error: any, action: string): WatchResult {
+  if (!error || error.code === "23505") return { success: true, error: null, reason: null };
+  return { success: false, error: writeErrorMessage(error, action), reason: failureOf(error) };
+}
+
+export async function watchCivicIssue(userId: string, issueId: string): Promise<WatchResult> {
   const { error } = await supabase.from("watched_concern_cards").insert({
     user_id: userId, issue_id: issueId, notify_on_move: true,
   });
-  if (error && error.code !== "23505") return { success: false, error: error.message };
-  return { success: true, error: null };
+  return watchResult(error, "follow this issue");
 }
 
-export async function unwatchCivicIssue(userId: string, issueId: string) {
+export async function unwatchCivicIssue(userId: string, issueId: string): Promise<WatchResult> {
   const { error } = await supabase.from("watched_concern_cards")
     .delete().eq("user_id", userId).eq("issue_id", issueId);
-  return { success: !error, error: error?.message || null };
+  return watchResult(error, "change what you follow");
 }
 
-export async function watchConcernCard(userId: string, concernCardId: string, neighborhoodId?: string | null) {
+export async function watchConcernCard(userId: string, concernCardId: string, neighborhoodId?: string | null): Promise<WatchResult> {
   const { error } = await supabase.from("card_watches").insert({
     user_id: userId, concern_card_id: concernCardId, neighborhood_id: neighborhoodId || "unknown",
   });
-  if (error && error.code !== "23505") return { success: false, error: error.message };
-  return { success: true, error: null };
+  return watchResult(error, "follow this matter");
 }
 
-export async function unwatchConcernCard(userId: string, concernCardId: string) {
+export async function unwatchConcernCard(userId: string, concernCardId: string): Promise<WatchResult> {
   const { error } = await supabase.from("card_watches")
     .delete().eq("user_id", userId).eq("concern_card_id", concernCardId);
-  return { success: !error, error: error?.message || null };
+  return watchResult(error, "change what you follow");
 }
 
 // Record that a user opened a concern card (privacy-preserving; counts on the

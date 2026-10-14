@@ -232,8 +232,9 @@ export default function ConcernCardDetail() {
     // Only flip the button if the write actually succeeded — RLS can reject it
     // (standing gate), and an optimistic flip would hide that failure.
     if (watched) {
-      const { success } = await unwatchConcernCard(user.id, id);
+      const { success, error } = await unwatchConcernCard(user.id, id);
       if (success) setWatched(false);
+      else if (error) Alert.alert("Couldn't unfollow", error);
     } else {
       const { success, error } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
       if (success) setWatched(true);

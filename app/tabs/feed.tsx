@@ -7,6 +7,8 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
+import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
+import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -357,12 +359,13 @@ export default function FeedScreen() {
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
-      const { error } = await supabase.from("card_watches").delete().eq("user_id", currentUser.id).eq("concern_card_id", cardId);
-      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
+      const r = await unwatchConcernCard(currentUser.id, cardId);
+      if (r.success) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
+      else if (r.error) showToast(r.error);
     } else {
-      const { error } = await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: neighborhoodSlug || "unknown" });
-      if (!error) setWatchedIds((prev) => new Set([...prev, cardId]));
-      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
+      const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
+      if (r.success) setWatchedIds((prev) => new Set([...prev, cardId]));
+      else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
@@ -372,12 +375,13 @@ export default function FeedScreen() {
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {
-      const { error } = await supabase.from("watched_concern_cards").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
+      const r = await unwatchCivicIssue(currentUser.id, issueId);
+      if (r.success) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
+      else if (r.error) showToast(r.error);
     } else {
-      const { error } = await supabase.from("watched_concern_cards").insert({ user_id: currentUser.id, issue_id: issueId, notify_on_move: true });
-      if (!error) setWatchedIds((prev) => new Set([...prev, issueId]));
-      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
+      const r = await watchCivicIssue(currentUser.id, issueId);
+      if (r.success) setWatchedIds((prev) => new Set([...prev, issueId]));
+      else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
@@ -391,7 +395,7 @@ export default function FeedScreen() {
       body: draft.trim(), tags: [draftTag], upvote_count: 0, escalated: false,
     });
     if (error) {
-      showToast(error.message.includes("Rate limit") ? "You've posted 10 times this hour — try again later" : "Failed to post — " + error.message);
+      showToast((error.message || "").includes("Rate limit") ? "You've posted 10 times this hour — try again later" : writeErrorMessage(error, "post to your town"));
     } else {
       setDraft(""); setComposeOpen(false);
       showToast("Posted to " + (profile?.neighborhood || "your town"));
@@ -425,8 +429,7 @@ export default function FeedScreen() {
       title, status: "escalated", voice_count: 0, priority_pct: 0, source_label: sourceLabel,
     }).select().single();
     if (error) {
-      const denied = error.code === "42501" || /policy|permission|residen/i.test(error.message || "");
-      showToast(denied ? "Verify your residency to escalate to the civic tracker." : "Couldn't escalate — please try again.");
+      showToast(isStandingRefusal(error) ? "Verify your residency to escalate to the civic tracker." : "Couldn't escalate — please try again.");
       return;
     }
     await supabase.from("posts").update({ escalated: true, escalated_issue_id: issue.id }).eq("id", post.id);
@@ -521,7 +524,7 @@ export default function FeedScreen() {
       lat: reportCoords?.lat ?? null, lng: reportCoords?.lng ?? null, status: "open",
     });
     if (error) {
-      showToast(error.message.includes("Rate limit") ? "Max 5 reports per hour" : "Failed to submit — " + error.message);
+      showToast((error.message || "").includes("Rate limit") ? "Max 5 reports per hour" : writeErrorMessage(error, "report a street problem"));
     } else {
       setReportDesc(""); setReportLoc(""); setReportType("pothole"); setReportCoords(null);
       setReportCoordSource(null); setReportOpen(false);

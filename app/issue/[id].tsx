@@ -279,7 +279,7 @@ export default function IssueDetail() {
       const { error } = await supabase.from("disagreements").insert({
         user_id: currentUser.id, issue_id: issueId, recognition_statement: agreeInput.trim(), position: "agree",
       });
-      if (error) { showToast("Couldn't record that — " + (error.message || "try again")); return; }
+      if (error) { showToast(writeErrorMessage(error, "share your position")); return; }
       setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
       setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
       // Reload the row so it surfaces with the author profile.
@@ -520,7 +520,7 @@ export default function IssueDetail() {
         setRecognition("");
         showToast("Your perspective has been recorded");
       } else {
-        showToast("Couldn't record that — " + (error.message || "try again"));
+        showToast(writeErrorMessage(error, "share your position"));
       }
     } catch {
       showToast("Failed to submit");
@@ -547,7 +547,7 @@ export default function IssueDetail() {
     });
     setFlaggingExpert(false);
     if (!error) { setExpertReason(""); setShowExpertFlag(false); setExpertFlagged(true); showToast("Flagged for expert input"); }
-    else showToast("Couldn't flag — " + (error.message || "try again"));
+    else showToast(writeErrorMessage(error, "flag this for expert input"));
   }
 
   if (loading) {
@@ -655,6 +655,7 @@ export default function IssueDetail() {
               const r = next ? await watchCivicIssue(currentUser.id, issueId)
                              : await unwatchCivicIssue(currentUser.id, issueId);
               if (r.success) { setWatching(next); setWatcherCount((c) => Math.max(0, c + (next ? 1 : -1))); }
+              else if (r.error) showToast(r.error);
               setWatchBusy(false);
             }}
             style={[s.followBtn, watching && s.followBtnOn]}>
