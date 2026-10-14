@@ -13,6 +13,7 @@ import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
 import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
+import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
 import IssueTimeline from "../../components/IssueTimeline";
 import CoalitionBar from "../../components/CoalitionBar";
 
@@ -356,24 +357,38 @@ export default function IssueDetail() {
     if (!currentUser) return;
     setCommitting(true);
     try {
+      // `wrote` must mean a row came back, never that the text was long enough.
+      // The stake insert is refused for a resident without a verified address,
+      // and this used to set wrote = true regardless, so a stake-only entry
+      // that saved nothing anywhere still read "Shared with your neighbours ✓".
       let wrote = false;
+      const failed: string[] = [];
+      let refused = false;
+      const fail = (what: string, error: any) => {
+        failed.push(what);
+        if (isStandingRefusal(error)) refused = true;
+      };
+
       const stakeBody = confirmStake.trim();
       if (stakeBody.length >= 10) {
         if (myStake) {
-          const { data } = await supabase.from("issue_stakes")
+          const { data, error } = await supabase.from("issue_stakes")
             .update({ body: stakeBody }).eq("id", myStake.id).select("*, profiles:user_id(display_name)").single();
-          if (data) { setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s))); }
+          if (data) {
+            setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s)));
+            wrote = true;
+          } else fail("your stake", error);
         } else {
-          const { data } = await supabase.from("issue_stakes")
+          const { data, error } = await supabase.from("issue_stakes")
             .insert({ issue_id: issueId, user_id: currentUser.id, body: stakeBody })
             .select("*, profiles:user_id(display_name)").single();
           if (data) {
             setMyStake(data);
             setStakes((prev) => [data, ...prev]);
             setIssue((prev: any) => ({ ...prev, stake_count: (prev.stake_count || 0) + 1 }));
-          }
+            wrote = true;
+          } else fail("your stake", error);
         }
-        wrote = true;
       }
 
       const rec = confirmRecognition.trim();
@@ -394,7 +409,7 @@ export default function IssueDetail() {
             else setDisagreements((prev) => [row, ...prev]);
           }
           wrote = true;
-        }
+        } else fail("your position", error);
       }
 
       const replyBody = ownWordsText.trim();
@@ -402,18 +417,26 @@ export default function IssueDetail() {
         const { data: newReply, error } = await supabase.from("issue_replies")
           .insert({ issue_id: issueId, author_id: currentUser.id, body: replyBody })
           .select("*, profiles(display_name)").single();
-        if (error) {
-          showToast("Couldn't post your reply — " + (error.message || "try again"));
-        } else if (newReply) {
+        if (newReply) {
           setReplies((prev) => (prev.some((r) => r.id === newReply.id) ? prev : [...prev, newReply]));
           wrote = true;
-        }
+        } else fail("your reply", error);
       }
 
+      const why = refused ? "verify your address first." : "check your connection and try again.";
+      if (failed.length === 0) {
+        showToast(wrote ? "Shared with your neighbours ✓" : "Nothing recorded — add a bit more");
+      } else if (wrote) {
+        showToast(`Partly saved — ${failed.join(" and ")} didn't go through; ${why}`);
+      } else {
+        // Nothing saved: leave the confirm step open with the resident's words
+        // still in it, so they lose nothing.
+        showToast(`Not saved — ${why[0].toUpperCase()}${why.slice(1)}`);
+        return;
+      }
       setShowOwnWords(false);
       setInterpretation(null);
       setOwnWordsText("");
-      showToast(wrote ? "Shared with your neighbours ✓" : "Nothing recorded — add a bit more");
     } catch (e) {
       console.error("commitOwnWords error:", e);
       showToast("Something went wrong");
