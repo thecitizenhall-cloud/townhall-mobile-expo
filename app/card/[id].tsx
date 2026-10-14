@@ -9,6 +9,7 @@ import {
   watchConcernCard, unwatchConcernCard, recordConcernCardView, getResidentNeighborhoodSlug,
 } from "../../lib/concernCards";
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
+import CardCorrection from "../../components/CardCorrection";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
 import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
@@ -505,6 +506,11 @@ export default function ConcernCardDetail() {
             read together: response present, versus question outstanding. Same
             position as the web concern card. */}
         {card ? <StandingQuestions card={card} user={user} verified={verified} /> : null}
+
+        {/* Correction route — the card is Townhall's own summary of the record,
+            so anyone who finds it wrong can say so. Open to every reader, not
+            gated on residency. Follows the questions block, as on the web card. */}
+        {card ? <CardCorrection cardId={card.id} /> : null}
 
         {/* Expert review */}
         <View style={s.window}>
