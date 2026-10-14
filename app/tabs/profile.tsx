@@ -7,7 +7,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import YourIssuesScreen from "./issues";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
-import { reservedNameError } from "../../lib/displayName";
+import { reservedNameError, clipDisplayName } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { municipalityForSlug } from "../../lib/townOf";
@@ -356,7 +356,8 @@ export default function ProfileScreen() {
     if (user) {
       const { error } = await supabase.from("profiles").update({ display_name: nameDraft.trim() }).eq("id", user.id);
       if (!error) { setProfile((p: any) => ({ ...p, display_name: nameDraft.trim() })); setEditingName(false); }
-      else Alert.alert("Couldn't save", error.message);
+      // Not error.message: that is the database's text, not the resident's.
+      else Alert.alert("Couldn't save", "Your name wasn't changed. Check your connection and try again.");
     }
     setSaving(false);
   }
@@ -448,7 +449,7 @@ export default function ProfileScreen() {
             <View style={s.avatar}><Text style={s.avatarLetter}>{(profile?.display_name?.[0] || "?").toUpperCase()}</Text></View>
             {editingName ? (
               <View style={{ width: "100%", marginTop: 8 }}>
-                <TextInput style={s.nameInput} value={nameDraft} onChangeText={setNameDraft} autoFocus placeholder="Display name" placeholderTextColor={T.creamFaint} />
+                <TextInput style={s.nameInput} value={nameDraft} onChangeText={(v) => setNameDraft(clipDisplayName(v))} autoFocus placeholder="Display name" placeholderTextColor={T.creamFaint} />
                 <View style={s.nameBtns}>
                   <Pressable onPress={() => { setEditingName(false); setNameDraft(profile?.display_name || ""); }} style={s.ghostBtn}><Text style={s.ghostBtnText}>Cancel</Text></Pressable>
                   <Pressable onPress={saveName} disabled={!nameDraft.trim() || saving} style={[s.amberBtn, (!nameDraft.trim() || saving) && s.disabled]}><Text style={s.amberBtnText}>{saving ? "Saving…" : "Save"}</Text></Pressable>

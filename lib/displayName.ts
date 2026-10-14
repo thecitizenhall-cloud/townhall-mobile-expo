@@ -48,3 +48,14 @@ export function reservedNameError(name: string): string | null {
   }
   return null;
 }
+
+// The longest display name the database accepts: web migration 125's check is
+// char_length(display_name) <= 50, and the signup trigger trims to the same.
+// char_length counts characters (code points), not the UTF-16 units a JS
+// string's .length counts, so cut by code point. Same value as web's
+// DISPLAY_NAME_MAX in lib/onboardingFlow.mjs.
+export const DISPLAY_NAME_MAX = 50;
+
+export function clipDisplayName(name: string): string {
+  return Array.from(name || "").slice(0, DISPLAY_NAME_MAX).join("");
+}

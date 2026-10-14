@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
-import { reservedNameError } from "../../lib/displayName";
+import { reservedNameError, clipDisplayName } from "../../lib/displayName";
 import { T } from "../../lib/theme";
 
 export default function Register() {
@@ -80,7 +80,7 @@ export default function Register() {
           <TextInput
             style={s.input}
             value={displayName}
-            onChangeText={setDisplayName}
+            onChangeText={(v) => setDisplayName(clipDisplayName(v))}
             autoCapitalize="words"
             returnKeyType="next"
             placeholderTextColor={T.creamFaint}
