@@ -509,8 +509,9 @@ export default function ConcernCardDetail() {
 
         {/* Correction route — the card is Townhall's own summary of the record,
             so anyone who finds it wrong can say so. Open to every reader, not
-            gated on residency. Follows the questions block, as on the web card. */}
-        {card ? <CardCorrection cardId={card.id} /> : null}
+            gated on residency. Follows the questions block, as on the web card.
+            Keyed by card so a draft can never carry over to another card. */}
+        {card ? <CardCorrection key={card.id} cardId={card.id} /> : null}
 
         {/* Expert review */}
         <View style={s.window}>

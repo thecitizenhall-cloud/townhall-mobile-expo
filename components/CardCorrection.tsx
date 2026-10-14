@@ -18,6 +18,11 @@ import { T } from "../lib/theme";
 const MIN = 10;
 const MAX = 2000;
 
+// The database counts characters (char_length); a JS string's length counts
+// UTF-16 units, so five emoji would pass a .length check at 10 and then be
+// refused. Count and cut by code point instead.
+const chars = (v: string) => Array.from(v);
+
 export default function CardCorrection({ cardId }: { cardId: string }) {
   const [open, setOpen] = useState(false);
   const [claim, setClaim] = useState("");
@@ -26,15 +31,15 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
 
-  const tooShort = claim.trim().length < MIN;
+  const tooShort = chars(claim.trim()).length < MIN;
 
   async function submit() {
     const c = claim.trim();
-    if (c.length < MIN) { setErr("Please describe what's inaccurate (at least 10 characters)."); return; }
+    if (chars(c).length < MIN) { setErr("Please describe what's inaccurate (at least 10 characters)."); return; }
     setBusy(true); setErr("");
     const { error } = await supabase.from("card_corrections").insert({
       concern_card_id: cardId,
-      claim: c.slice(0, MAX),
+      claim: chars(c).slice(0, MAX).join(""),
       contact_email: email.trim() ? email.trim().slice(0, 254) : null,
     });
     setBusy(false);
@@ -70,7 +75,7 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
       <TextInput
         style={s.input}
         value={claim}
-        onChangeText={(v) => setClaim(v.slice(0, MAX))}
+        onChangeText={(v) => setClaim(chars(v).slice(0, MAX).join(""))}
         maxLength={MAX}
         multiline
         placeholder="What is inaccurate, and what does the record actually say?"
