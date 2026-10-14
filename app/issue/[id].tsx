@@ -456,6 +456,7 @@ export default function IssueDetail() {
         return;
       }
       showToast("Shared with your neighbours ✓");
+      clearSaved();
       setShowOwnWords(false);
       setInterpretation(null);
       setOwnWordsText("");
