@@ -8,6 +8,14 @@
 // position). 42501 is its code; the text test catches the same refusal when it
 // arrives without one. Same rule the escalate, raise and standing-question
 // paths already used inline.
+//
+// This is deliberately broad, and that is a decision, not an oversight: any
+// 42501, or any message naming a policy or permission, reads as "verify your
+// address". A verified resident refused by some OTHER policy therefore gets
+// advice that cannot help them. The client cannot tell which policy refused a
+// row, and web makes the same call in four places (standingQuestions.js,
+// TownScreen.jsx twice, BudgetScreen.jsx), so the two apps say the same thing.
+// Narrow it here and on web together, or not at all.
 type DbError = { code?: string | null; message?: string | null } | null | undefined;
 
 export function isStandingRefusal(error: DbError): boolean {
