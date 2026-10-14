@@ -18,6 +18,7 @@
 // error handling — the two clients must not diverge in what they allow.
 
 import { supabase } from "./supabase";
+import { writeErrorMessage } from "./writeError";
 import type { ConditionKind, StandingQuestion } from "./questionVocab";
 
 export * from "./questionVocab";
@@ -50,11 +51,9 @@ export async function askQuestion(
   }).select().maybeSingle();
 
   if (error) {
-    // 42501 is the RLS refusal a resident without a verified address gets.
-    if ((error as any).code === "42501") {
-      return { ok: false, error: "Verify your address to put a question on the public record." };
-    }
-    return { ok: false, error: error.message };
+    // A standing refusal is what a resident without a verified address gets;
+    // anything else is ours to read, not theirs (see lib/writeError.ts).
+    return { ok: false, error: writeErrorMessage(error, "put a question on the public record") };
   }
   return { ok: true, question: data as StandingQuestion };
 }

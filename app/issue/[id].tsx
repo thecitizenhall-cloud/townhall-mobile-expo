@@ -13,6 +13,8 @@ import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
 import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
+import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
+import { replacePosition } from "../../lib/positions";
 import IssueTimeline from "../../components/IssueTimeline";
 import CoalitionBar from "../../components/CoalitionBar";
 
@@ -270,15 +272,24 @@ export default function IssueDetail() {
     }
   }
 
+  // When a position change loses the earlier position (see lib/positions.ts),
+  // take it off the screen too, so the page does not show a row that is gone.
+  function dropMyPosition() {
+    if (!currentUser) return;
+    setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
+    setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
+  }
+
   async function submitAgreement() {
     if (!currentUser || agreeInput.trim().length < 50) return;
     setAgreePosting(true);
     try {
-      await supabase.from("disagreements").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-      const { error } = await supabase.from("disagreements").insert({
-        user_id: currentUser.id, issue_id: issueId, recognition_statement: agreeInput.trim(), position: "agree",
-      });
-      if (error) { showToast("Couldn't record that — " + (error.message || "try again")); return; }
+      const r = await replacePosition(currentUser.id, issueId, "agree", agreeInput.trim());
+      if (!r.ok) {
+        if (r.lost) dropMyPosition();
+        showToast(r.error);
+        return;
+      }
       setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
       setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
       // Reload the row so it surfaces with the author profile.
@@ -355,35 +366,53 @@ export default function IssueDetail() {
   async function commitOwnWords() {
     if (!currentUser) return;
     setCommitting(true);
+    const saved = { stake: false, position: false, reply: false };
+    // Clear whatever already saved, so a retry cannot post it a second time.
+    const clearSaved = () => {
+      if (saved.stake) setConfirmStake("");
+      if (saved.position) { setConfirmRecognition(""); setConfirmStance("unsure"); }
+      if (saved.reply) setOwnWordsText("");
+    };
     try {
+      // `wrote` must mean a row came back, never that the text was long enough.
+      // The stake insert is refused for a resident without a verified address,
+      // and this used to set wrote = true regardless, so a stake-only entry
+      // that saved nothing anywhere still read "Shared with your neighbours ✓".
       let wrote = false;
+      const failed: string[] = [];
+      let refused = false;
+      const fail = (what: string, error: any) => {
+        failed.push(what);
+        if (isStandingRefusal(error)) refused = true;
+      };
+
       const stakeBody = confirmStake.trim();
       if (stakeBody.length >= 10) {
         if (myStake) {
-          const { data } = await supabase.from("issue_stakes")
+          const { data, error } = await supabase.from("issue_stakes")
             .update({ body: stakeBody }).eq("id", myStake.id).select("*, profiles:user_id(display_name)").single();
-          if (data) { setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s))); }
+          if (data) {
+            setMyStake(data); setStakes((prev) => prev.map((s) => (s.id === data.id ? data : s)));
+            wrote = saved.stake = true;
+          } else fail("your stake", error);
         } else {
-          const { data } = await supabase.from("issue_stakes")
+          const { data, error } = await supabase.from("issue_stakes")
             .insert({ issue_id: issueId, user_id: currentUser.id, body: stakeBody })
             .select("*, profiles:user_id(display_name)").single();
           if (data) {
             setMyStake(data);
             setStakes((prev) => [data, ...prev]);
             setIssue((prev: any) => ({ ...prev, stake_count: (prev.stake_count || 0) + 1 }));
-          }
+            wrote = saved.stake = true;
+          } else fail("your stake", error);
         }
-        wrote = true;
       }
 
       const rec = confirmRecognition.trim();
       if ((confirmStance === "support" || confirmStance === "oppose") && rec.length >= 50) {
         const position = confirmStance === "support" ? "agree" : "disagree";
-        await supabase.from("disagreements").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-        const { error } = await supabase.from("disagreements").insert({
-          user_id: currentUser.id, issue_id: issueId, recognition_statement: rec, position,
-        });
-        if (!error) {
+        const r = await replacePosition(currentUser.id, issueId, position, rec);
+        if (r.ok) {
           const { data: row } = await supabase.from("disagreements")
             .select("*, profiles(display_name)").eq("user_id", currentUser.id)
             .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -393,7 +422,11 @@ export default function IssueDetail() {
             if (position === "agree") setAgreements((prev) => [row, ...prev]);
             else setDisagreements((prev) => [row, ...prev]);
           }
-          wrote = true;
+          wrote = saved.position = true;
+        } else {
+          if (r.lost) dropMyPosition();
+          failed.push(r.lost ? "your position (and your earlier one was removed)" : "your position");
+          if (r.reason === "unverified") refused = true;
         }
       }
 
@@ -402,20 +435,34 @@ export default function IssueDetail() {
         const { data: newReply, error } = await supabase.from("issue_replies")
           .insert({ issue_id: issueId, author_id: currentUser.id, body: replyBody })
           .select("*, profiles(display_name)").single();
-        if (error) {
-          showToast("Couldn't post your reply — " + (error.message || "try again"));
-        } else if (newReply) {
+        if (newReply) {
           setReplies((prev) => (prev.some((r) => r.id === newReply.id) ? prev : [...prev, newReply]));
-          wrote = true;
-        }
+          wrote = saved.reply = true;
+        } else fail("your reply", error);
       }
 
+      // Unless everything went through, the confirm step stays open with
+      // whatever did NOT save still in it, so the resident loses no words.
+      const why = refused ? "verify your address first." : "check your connection and try again.";
+      if (failed.length === 0 && !wrote) {
+        showToast("Nothing recorded — add a bit more");
+        return;
+      }
+      if (failed.length > 0) {
+        clearSaved();
+        showToast(wrote
+          ? `Partly saved — ${failed.join(" and ")} didn't go through; ${why}`
+          : `Not saved — ${why[0].toUpperCase()}${why.slice(1)}`);
+        return;
+      }
+      showToast("Shared with your neighbours ✓");
+      clearSaved();
       setShowOwnWords(false);
       setInterpretation(null);
       setOwnWordsText("");
-      showToast(wrote ? "Shared with your neighbours ✓" : "Nothing recorded — add a bit more");
     } catch (e) {
       console.error("commitOwnWords error:", e);
+      clearSaved();
       showToast("Something went wrong");
     } finally {
       setCommitting(false);
@@ -483,11 +530,8 @@ export default function IssueDetail() {
     if (!recognition.trim() || !currentUser) return;
     setSubmittingD(true);
     try {
-      await supabase.from("disagreements").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-      const { error } = await supabase.from("disagreements").insert({
-        user_id: currentUser.id, issue_id: issueId, recognition_statement: recognition.trim(), position: "disagree",
-      });
-      if (!error) {
+      const r = await replacePosition(currentUser.id, issueId, "disagree", recognition.trim());
+      if (r.ok) {
         const { data: newDisag } = await supabase.from("disagreements")
           .select("*, profiles(display_name)").eq("user_id", currentUser.id).eq("issue_id", issueId).maybeSingle();
         setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
@@ -497,7 +541,8 @@ export default function IssueDetail() {
         setRecognition("");
         showToast("Your perspective has been recorded");
       } else {
-        showToast("Couldn't record that — " + (error.message || "try again"));
+        if (r.lost) dropMyPosition();
+        showToast(r.error);
       }
     } catch {
       showToast("Failed to submit");
@@ -524,7 +569,7 @@ export default function IssueDetail() {
     });
     setFlaggingExpert(false);
     if (!error) { setExpertReason(""); setShowExpertFlag(false); setExpertFlagged(true); showToast("Flagged for expert input"); }
-    else showToast("Couldn't flag — " + (error.message || "try again"));
+    else showToast(writeErrorMessage(error, "flag this for expert input"));
   }
 
   if (loading) {
@@ -632,6 +677,7 @@ export default function IssueDetail() {
               const r = next ? await watchCivicIssue(currentUser.id, issueId)
                              : await unwatchCivicIssue(currentUser.id, issueId);
               if (r.success) { setWatching(next); setWatcherCount((c) => Math.max(0, c + (next ? 1 : -1))); }
+              else if (r.error) showToast(r.error);
               setWatchBusy(false);
             }}
             style={[s.followBtn, watching && s.followBtnOn]}>

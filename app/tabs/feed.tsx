@@ -7,6 +7,8 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
+import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
+import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -113,7 +115,11 @@ export default function FeedScreen() {
   // that session". Web solves the same problem with an in-memory isFirstTime
   // flag (pages/app.jsx); mobile has no equivalent across a route change.
   const { arrival } = useLocalSearchParams<{ arrival?: string }>();
-  const [verified, setVerified] = useState(true);
+  // null until the residency check resolves. This used to start at true, so
+  // until loadFeed finished, every standing action below went straight to the
+  // database for a resident with no verified address, and RLS refused it there.
+  // A gate must start closed; `hasStanding()` holds the tap until it knows.
+  const [verified, setVerified] = useState<boolean | null>(null);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
@@ -340,46 +346,56 @@ export default function FeedScreen() {
 
   const onRefresh = useCallback(() => loadFeed(true), []);
 
+  // The gate every standing action shares: a guest or an unverified resident
+  // goes to verification; while the check is still running, nothing is sent.
+  function hasStanding(): boolean {
+    if (!currentUser || verified === false) { goVerify(); return false; }
+    if (verified === null) { showToast("Still checking your address — try again in a moment."); return false; }
+    return true;
+  }
+
   async function handleWatchCard(cardId: string) {
-    if (!currentUser || !verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
-      const { error } = await supabase.from("card_watches").delete().eq("user_id", currentUser.id).eq("concern_card_id", cardId);
-      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
+      const r = await unwatchConcernCard(currentUser.id, cardId);
+      if (r.success) setWatchedIds((prev) => { const n = new Set(prev); n.delete(cardId); return n; });
+      else if (r.error) showToast(r.error);
     } else {
-      const { error } = await supabase.from("card_watches").insert({ user_id: currentUser.id, concern_card_id: cardId, neighborhood_id: neighborhoodSlug || "unknown" });
-      if (!error) setWatchedIds((prev) => new Set([...prev, cardId]));
-      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
+      const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
+      if (r.success) setWatchedIds((prev) => new Set([...prev, cardId]));
+      else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
 
   async function handleWatchIssue(issueId: string) {
-    if (!currentUser || !verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {
-      const { error } = await supabase.from("watched_concern_cards").delete().eq("user_id", currentUser.id).eq("issue_id", issueId);
-      if (!error) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
+      const r = await unwatchCivicIssue(currentUser.id, issueId);
+      if (r.success) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
+      else if (r.error) showToast(r.error);
     } else {
-      const { error } = await supabase.from("watched_concern_cards").insert({ user_id: currentUser.id, issue_id: issueId, notify_on_move: true });
-      if (!error) setWatchedIds((prev) => new Set([...prev, issueId]));
-      else if (error.code !== "23505") showToast("Couldn't follow — " + error.message);
+      const r = await watchCivicIssue(currentUser.id, issueId);
+      if (r.success) setWatchedIds((prev) => new Set([...prev, issueId]));
+      else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
 
   async function handlePost() {
     if (!draft.trim() || posting) return;
-    if (!currentUser || !verified) { goVerify(); return; }   // MOB-POST-GATE: no crash for anon
+    if (!hasStanding()) return;   // MOB-POST-GATE: no crash for anon
     setPosting(true);
     const { error } = await supabase.from("posts").insert({
       author_id: currentUser.id, neighborhood_id: profile?.neighborhood_id || null,
       body: draft.trim(), tags: [draftTag], upvote_count: 0, escalated: false,
     });
     if (error) {
-      showToast(error.message.includes("Rate limit") ? "You've posted 10 times this hour — try again later" : "Failed to post — " + error.message);
+      showToast((error.message || "").includes("Rate limit") ? "You've posted 10 times this hour — try again later" : writeErrorMessage(error, "post to your town"));
     } else {
       setDraft(""); setComposeOpen(false);
       showToast("Posted to " + (profile?.neighborhood || "your town"));
@@ -401,7 +417,7 @@ export default function FeedScreen() {
 
   async function handleEscalate(post: any) {
     if (!currentUser) return;
-    if (!verified) { goVerify(); return; }
+    if (!hasStanding()) return;
     const title = post.body.length > 100 ? post.body.slice(0, 100) + "…" : post.body;
     const { data: profEsc } = await supabase.from("profiles").select("neighborhood_id, display_name").eq("id", currentUser.id).maybeSingle();
     const escalatorName = profEsc?.display_name || "Resident";
@@ -413,8 +429,7 @@ export default function FeedScreen() {
       title, status: "escalated", voice_count: 0, priority_pct: 0, source_label: sourceLabel,
     }).select().single();
     if (error) {
-      const denied = error.code === "42501" || /policy|permission|residen/i.test(error.message || "");
-      showToast(denied ? "Verify your residency to escalate to the civic tracker." : "Couldn't escalate — please try again.");
+      showToast(isStandingRefusal(error) ? "Verify your residency to escalate to the civic tracker." : "Couldn't escalate — please try again.");
       return;
     }
     await supabase.from("posts").update({ escalated: true, escalated_issue_id: issue.id }).eq("id", post.id);
@@ -485,7 +500,7 @@ export default function FeedScreen() {
 
   async function handleReport() {
     if (!reportDesc.trim() || reporting) return;
-    if (!currentUser || !verified) { goVerify(); return; }   // MOB-3: no crash for anon
+    if (!hasStanding()) return;   // MOB-3: no crash for anon
     setReporting(true);
     const { data: prof } = await supabase.from("profiles").select("neighborhood_id, municipality_id").eq("id", currentUser.id).maybeSingle();
     // The resident's own town, resolved against real municipality ids
@@ -509,7 +524,7 @@ export default function FeedScreen() {
       lat: reportCoords?.lat ?? null, lng: reportCoords?.lng ?? null, status: "open",
     });
     if (error) {
-      showToast(error.message.includes("Rate limit") ? "Max 5 reports per hour" : "Failed to submit — " + error.message);
+      showToast((error.message || "").includes("Rate limit") ? "Max 5 reports per hour" : writeErrorMessage(error, "report a street problem"));
     } else {
       setReportDesc(""); setReportLoc(""); setReportType("pothole"); setReportCoords(null);
       setReportCoordSource(null); setReportOpen(false);
@@ -678,7 +693,7 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {!verified && (
+            {verified === false && (
               <TouchableOpacity style={s.verifyBanner} onPress={goVerify} activeOpacity={0.8}>
                 <Text style={s.verifyBannerText} numberOfLines={1}>
                   Reading as a guest · <Text style={s.verifyBannerCta}>Verify residency →</Text>
