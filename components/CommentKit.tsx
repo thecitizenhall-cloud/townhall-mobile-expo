@@ -12,7 +12,7 @@
 // stack of cards on mobile, which is the native rendering here.
 import { useState } from "react";
 import {
-  View, Text, TextInput, Pressable, StyleSheet,
+  View, Text, TextInput, Pressable, StyleSheet, Alert,
 } from "react-native";
 import { T } from "../lib/theme";
 import ReportButton from "./ReportButton";
@@ -151,6 +151,10 @@ function StanceComposer({
         setText("");
         setStance("neutral");
       }
+    } catch {
+      // A post that threw (a dropped connection mid-request) gets said too;
+      // the words stay in the box either way.
+      Alert.alert("Not posted", "That didn't go through. Check your connection and try again.");
     } finally {
       setPosting(false);
     }
