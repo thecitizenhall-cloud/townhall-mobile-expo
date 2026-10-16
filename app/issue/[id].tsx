@@ -272,24 +272,12 @@ export default function IssueDetail() {
     }
   }
 
-  // When a position change loses the earlier position (see lib/positions.ts),
-  // take it off the screen too, so the page does not show a row that is gone.
-  function dropMyPosition() {
-    if (!currentUser) return;
-    setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
-    setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
-  }
-
   async function submitAgreement() {
     if (!currentUser || agreeInput.trim().length < 50) return;
     setAgreePosting(true);
     try {
-      const r = await replacePosition(currentUser.id, issueId, "agree", agreeInput.trim());
-      if (!r.ok) {
-        if (r.lost) dropMyPosition();
-        showToast(r.error);
-        return;
-      }
+      const r = await replacePosition(issueId, "agree", agreeInput.trim());
+      if (!r.ok) { showToast(r.error); return; }
       setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
       setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
       // Reload the row so it surfaces with the author profile.
@@ -411,11 +399,13 @@ export default function IssueDetail() {
       const rec = confirmRecognition.trim();
       if ((confirmStance === "support" || confirmStance === "oppose") && rec.length >= 50) {
         const position = confirmStance === "support" ? "agree" : "disagree";
-        const r = await replacePosition(currentUser.id, issueId, position, rec);
+        const r = await replacePosition(issueId, position, rec);
         if (r.ok) {
+          // Scoped to this issue: unscoped, "newest position anywhere" could
+          // surface the resident's position on a different issue here.
           const { data: row } = await supabase.from("disagreements")
-            .select("*, profiles(display_name)").eq("user_id", currentUser.id)
-            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            .select("*, profiles(display_name)").eq("user_id", currentUser.id).eq("issue_id", issueId)
+            .maybeSingle();
           setAgreements((prev) => prev.filter((a) => a.user_id !== currentUser.id));
           setDisagreements((prev) => prev.filter((d) => d.user_id !== currentUser.id));
           if (row) {
@@ -424,8 +414,7 @@ export default function IssueDetail() {
           }
           wrote = saved.position = true;
         } else {
-          if (r.lost) dropMyPosition();
-          failed.push(r.lost ? "your position (and your earlier one was removed)" : "your position");
+          failed.push("your position");
           if (r.reason === "unverified") refused = true;
         }
       }
@@ -531,7 +520,7 @@ export default function IssueDetail() {
     if (!recognition.trim() || !currentUser) return;
     setSubmittingD(true);
     try {
-      const r = await replacePosition(currentUser.id, issueId, "disagree", recognition.trim());
+      const r = await replacePosition(issueId, "disagree", recognition.trim());
       if (r.ok) {
         const { data: newDisag } = await supabase.from("disagreements")
           .select("*, profiles(display_name)").eq("user_id", currentUser.id).eq("issue_id", issueId).maybeSingle();
@@ -542,7 +531,6 @@ export default function IssueDetail() {
         setRecognition("");
         showToast("Your perspective has been recorded");
       } else {
-        if (r.lost) dropMyPosition();
         showToast(r.error);
       }
     } catch {
