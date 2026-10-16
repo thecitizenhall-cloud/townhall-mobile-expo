@@ -30,7 +30,17 @@ export async function replacePosition(
     p_issue_id: issueId, p_position: position, p_statement: statement,
   });
   if (!error) return { ok: true, error: null, reason: null };
-  // The transaction rolled back, so whatever position they had still stands.
+  // Only an answer from the database proves the rollback: a refusal or a
+  // failed check comes back with a code. With no code the request may never
+  // have arrived, or may have committed with the reply lost on the way back,
+  // so do not claim either outcome.
+  if (!error.code) {
+    return {
+      ok: false,
+      error: "We couldn't confirm whether your position was saved. Reopen this issue to check.",
+      reason: "failed",
+    };
+  }
   return {
     ok: false,
     error: `Your position didn't change. ${writeErrorMessage(error, "share your position")}`,
