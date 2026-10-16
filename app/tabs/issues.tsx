@@ -117,8 +117,6 @@ export default function YourIssuesScreen() {
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [myVotes, setMyVotes] = useState<any[]>([]);
   const [neighborhoodIssues, setNeighborhoodIssues] = useState<any[]>([]);
-  const [watchedIssues, setWatchedIssues] = useState<any[]>([]);
-  const [sinceLastVisit, setSinceLastVisit] = useState<any[]>([]);
   const [sinceLastVisitCards, setSinceLastVisitCards] = useState<any[]>([]);
   const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity | null>(null);
   const [concernCards, setConcernCards] = useState<any[]>([]);
@@ -148,7 +146,6 @@ export default function YourIssuesScreen() {
         { data: posts },
         { data: votes },
         { data: prof },
-        { data: watched },
         { data: cardWatches },
         activity,
         myQuestions,
@@ -161,8 +158,6 @@ export default function YourIssuesScreen() {
           .eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
         supabase.from("profiles")
           .select("neighborhood_id, previous_session_at").eq("id", u.id).maybeSingle(),
-        supabase.from("watched_concern_cards")
-          .select("*, civic_issues(*)").eq("user_id", u.id).not("issue_id", "is", null).order("watched_at", { ascending: false }),
         supabase.from("card_watches")
           .select("concern_card_id, created_at").eq("user_id", u.id).order("created_at", { ascending: false }),
         getWeeklyActivity(u.id),
@@ -173,20 +168,17 @@ export default function YourIssuesScreen() {
 
       setMyPosts(posts || []);
       setMyVotes(votes || []);
-      setWatchedIssues((watched || []).map((w: any) => w.civic_issues).filter(Boolean));
       setWeeklyActivity(activity);
       setQuestions(myQuestions.questions);
 
       // ── Phase 2: reads that depend on phase-1 results, in parallel ────────
       // Guarded branches resolve to empty so the Promise.all shape is stable.
       const watchedCardIds = (cardWatches || []).map((w: any) => w.concern_card_id);
-      const watchedIssueIds = (watched || []).map((w: any) => w.issue_id).filter(Boolean);
 
       const [
         { data: nbhdIssues },
         { data: watchedCards },
         { data: hoodData },
-        { data: changed },
         { data: movedNotifs },
       ] = await Promise.all([
         // Municipality-wide issues (null neighborhood_id) are always included
@@ -206,10 +198,6 @@ export default function YourIssuesScreen() {
         prof?.neighborhood_id
           ? supabase.from("neighborhoods").select("slug").eq("id", prof.neighborhood_id).maybeSingle()
           : Promise.resolve({ data: null as any }),
-        (prof?.previous_session_at && watchedIssueIds.length)
-          ? supabase.from("civic_issues")
-              .select("*").gt("updated_at", prof.previous_session_at).in("id", watchedIssueIds)
-          : Promise.resolve({ data: [] as any[] }),
         // watched_item_moved notifications since last visit — the notifier records
         // the full old→new outcome transition in the payload, which the concern_cards
         // row can't reconstruct once previous_outcome_signal is reset. Used to show
@@ -246,12 +234,11 @@ export default function YourIssuesScreen() {
 
       // Since-last-visit changes, diffed against previous_session_at.
       if (prof?.previous_session_at) {
-        setSinceLastVisit(changed || []);
         // Watched CONCERN CARDS whose outcome flipped since last visit — the
         // automated civic-engine round trip's "return" leg. The engine stamps
         // outcome_changed_at when outcome_signal changes; surface it here so the
-        // outcome actually comes back to the resident. (card_watches — separate
-        // from the watched_concern_cards/civic_issues path above.)
+        // outcome actually comes back to the resident. (card_watches. Civic
+        // issues are no longer followable: that path was retired 2026-10-15.)
         const base = new Date(prof.previous_session_at).getTime();
         // Map card_id → prior outcome from the notification payload (newest-first,
         // so the first entry per card is the most recent move).
@@ -281,7 +268,7 @@ export default function YourIssuesScreen() {
 
   const myEscalated = myPosts.filter((p) => p.escalated && p.civic_issues);
   const hasAnything =
-    concernCards.length > 0 || watchedIssues.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0 ||
+    concernCards.length > 0 || myVotes.length > 0 || myEscalated.length > 0 || sinceLastVisitCards.length > 0 ||
     returnedQuestions.length > 0 || standingQuestions.length > 0;
   const wa = weeklyActivity;
   const showActivity = wa && (wa.cardsRead > 0 || wa.votesCast > 0 || wa.itemsWatched > 0 || wa.responsesReceived > 0);
@@ -334,11 +321,10 @@ export default function YourIssuesScreen() {
                 </View>
               )}
 
-              {(sinceLastVisit.length > 0 || sinceLastVisitCards.length > 0) && (
+              {sinceLastVisitCards.length > 0 && (
                 <>
                   <Text style={[s.sectionLabel, { color: T.amberHi }]}>New since your last visit</Text>
                   {sinceLastVisitCards.map((card) => <MovedCardRow key={"card-" + card.id} card={card} onPress={() => openCard(card.id)} />)}
-                  {sinceLastVisit.map((iss) => <IssueRow key={iss.id} issue={iss} highlight updated onPress={() => openIssue(iss.id)} />)}
                 </>
               )}
 
@@ -364,13 +350,6 @@ export default function YourIssuesScreen() {
                   {concernCards.map((card) => (
                     <ConcernCardItem key={card.id} card={card} onPress={() => openCard(card.id)} />
                   ))}
-                </>
-              )}
-
-              {watchedIssues.length > 0 && (
-                <>
-                  <Text style={s.sectionLabel}>Following · {watchedIssues.length}</Text>
-                  {watchedIssues.map((iss) => <IssueRow key={iss.id} issue={iss} onPress={() => openIssue(iss.id)} />)}
                 </>
               )}
 

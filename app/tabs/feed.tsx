@@ -8,7 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
-import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE } from "../../lib/concernCards";
+import { watchConcernCard, unwatchConcernCard, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -295,15 +295,14 @@ export default function FeedScreen() {
         : issuesQ.is("neighborhood_id", null);
 
       // ── Everything that needs only `p`/user.id, in parallel ────────────
-      // (verification, civic feed, posts, open issues, both watch tables) —
+      // (verification, civic feed, posts, open issues, card follows) —
       // previously a long serial chain with issues + watch state stranded last.
-      const [verified, civicItems, council, postRes, issRes, wiRes, wcRes] = await Promise.all([
+      const [verified, civicItems, council, postRes, issRes, wcRes] = await Promise.all([
         hasResidencyProof(user.id, p?.neighborhood_id ?? null),
         civicPromise,
         councilPromise,
         postQ,
         issuesQ.order("voice_count", { ascending: false }).limit(20),
-        supabase.from("watched_concern_cards").select("issue_id").eq("user_id", user.id),
         supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
       ]);
 
@@ -320,10 +319,7 @@ export default function FeedScreen() {
       setFeedCounts(council.counts);
       setFeedHasMore(council.hasMore);
       setIssues(issRes.data || []);
-      setWatchedIds(new Set([
-        ...((wiRes.data || []).map((w: any) => w.issue_id).filter(Boolean)),
-        ...((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)),
-      ]));
+      setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
 
       // Upvote state depends on the fetched posts, so it follows the batch.
       let withVotes = dedupeSyncedPosts(postRes.data || []);
@@ -374,27 +370,6 @@ export default function FeedScreen() {
         if (r.notifying === false) showToast(FOLLOW_NO_NOTIFY_NOTE);
         else if (r.notifying === null) showToast(FOLLOW_NOTIFY_UNKNOWN_NOTE);
       } else if (r.error) showToast(r.error);
-    }
-    setWatchLoading(null);
-  }
-
-  // No FOLLOW_NO_NOTIFY_NOTE here, on purpose. That note says notifications
-  // come once you verify; for a civic ISSUE they never come, verified or not,
-  // because nothing notifies on watched_concern_cards at all. Whether this
-  // follow path is retired or gets a notifier is an open product decision;
-  // until then, do not add a note that promises one.
-  async function handleWatchIssue(issueId: string) {
-    if (!currentUser) { router.push("/auth/login"); return; }
-    setWatchLoading(issueId);
-    const isOn = watchedIds.has(issueId);
-    if (isOn) {
-      const r = await unwatchCivicIssue(currentUser.id, issueId);
-      if (r.success) setWatchedIds((prev) => { const n = new Set(prev); n.delete(issueId); return n; });
-      else if (r.error) showToast(r.error);
-    } else {
-      const r = await watchCivicIssue(currentUser.id, issueId);
-      if (r.success) setWatchedIds((prev) => new Set([...prev, issueId]));
-      else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
@@ -721,7 +696,7 @@ export default function FeedScreen() {
                 <Text style={s.firstTimeSub}>
                   {concernCards.length > 0
                     ? "Three things your local government is working on right now. Follow any one to be notified the moment it moves."
-                    : "Here's what your neighborhood is working on right now. Follow any issue to be notified when something changes."}
+                    : "Here's what your neighborhood is working on right now."}
                 </Text>
                 {concernCards.length > 0
                   ? concernCards.slice(0, 3).map((c) => {
@@ -741,20 +716,15 @@ export default function FeedScreen() {
                         </Pressable>
                       );
                     })
+                  // Civic issues are not followable (retired 2026-10-15: nothing
+                  // ever notified on them). Concern cards above are.
                   : issues.slice(0, 3).map((iss) => {
-                      const on = watchedIds.has(iss.id);
                       return (
                         <Pressable key={iss.id} style={s.firstCard} onPress={() => router.push({ pathname: "/issue/[id]", params: { id: iss.id } })}>
                           <View style={{ flex: 1 }}>
                             <Text style={s.firstCardTitle}>{iss.title}</Text>
                             <Text style={s.firstCardMeta}>{iss.voice_count || 0} votes · {iss.priority_pct || 0}% priority</Text>
                           </View>
-                          <Pressable onPress={() => handleWatchIssue(iss.id)} disabled={watchLoading === iss.id}
-                            style={[s.followBtn, { backgroundColor: on ? T.tealLo : T.amberLo, borderColor: on ? T.teal : T.amber }]}>
-                            <Text style={[s.followBtnText, { color: on ? T.tealHi : T.amberHi }]}>
-                              {watchLoading === iss.id ? "…" : on ? "✓ Following" : "Follow"}
-                            </Text>
-                          </Pressable>
                         </Pressable>
                       );
                     })}

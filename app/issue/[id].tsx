@@ -12,7 +12,6 @@ import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
-import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
 import { replacePosition } from "../../lib/positions";
 import { charCount } from "../../lib/chars";
@@ -44,7 +43,6 @@ export default function IssueDetail() {
 
   const [issue, setIssue] = useState<any>(null);
   const [coalThreshold, setCoalThreshold] = useState<number | null>(null); // per-neighborhood coalition line (RPC); null → fallback default
-  const [watcherCount, setWatcherCount] = useState(0);
   const [replies, setReplies] = useState<any[]>([]);
   const [expertAnswers, setExpertAnswers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -64,8 +62,6 @@ export default function IssueDetail() {
   const [stakes, setStakes] = useState<any[]>([]);
   const [myStake, setMyStake] = useState<any>(null);
   const [stakeInput, setStakeInput] = useState("");
-  const [watching, setWatching] = useState(false);
-  const [watchBusy, setWatchBusy] = useState(false);
 
   const [subIssues, setSubIssues] = useState<any[]>([]);
   const [relatedIssues, setRelatedIssues] = useState<any[]>([]);
@@ -193,7 +189,6 @@ export default function IssueDetail() {
       const [
         { data: iss },
         { data: vote },
-        { count: watchers },
         { data: reps },
         { data: stakeRows },
         { data: answers },
@@ -205,7 +200,6 @@ export default function IssueDetail() {
         user
           ? supabase.from("votes").select("id").eq("issue_id", issueId).eq("user_id", user.id).maybeSingle()
           : Promise.resolve({ data: null }),
-        supabase.from("watched_concern_cards").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
         supabase.from("issue_replies")
           .select("*, profiles(display_name)").eq("issue_id", issueId).is("removed_at", null).order("created_at", { ascending: true }),
         supabase.from("issue_stakes")
@@ -228,15 +222,11 @@ export default function IssueDetail() {
 
       setIssue({ ...iss, user_has_voted: !!vote });
       if (iss.synthesis) setDistilled(iss.synthesis);
-      setWatcherCount(watchers || 0);
       setReplies(reps || []);
       setStakes(stakeRows || []);
       if (user) {
         const my = (stakeRows || []).find((sr: any) => sr.user_id === user.id);
         if (my) { setMyStake(my); setStakeInput(my.body); }
-        const { data: w } = await supabase.from("watched_concern_cards")
-          .select("id").eq("user_id", user.id).eq("issue_id", issueId).maybeSingle();
-        setWatching(!!w);
       }
       setExpertAnswers(answers || []);
       if (!subErr) setSubIssues(subs || []);
@@ -613,7 +603,7 @@ export default function IssueDetail() {
     issue.status === "expert" ? "Under expert review" :
     issue.status === "escalated" ? (meetingStr ? `Escalated · council typically meets next ${meetingStr}` : "Escalated — awaiting council attention") :
     (meetingStr ? `Council typically meets 2nd & 4th Tuesdays — next: ${meetingStr}` : "Gathering resident input");
-  const showStands = !(total === 0 && !forLine && !againstLine && watcherCount === 0 && !responded);
+  const showStands = !(total === 0 && !forLine && !againstLine && !responded);
 
   const featuredDisagree = disagreements.length
     ? [...disagreements].sort((a, b) => (b.recognition_statement?.length || 0) - (a.recognition_statement?.length || 0))[0]
@@ -659,26 +649,9 @@ export default function IssueDetail() {
         })() : null}
         <View style={s.titleRow}>
           <Text style={[s.issueTitle, { flex: 1, marginBottom: 0 }]}>{issue.title}</Text>
-          <Pressable
-            onPress={async () => {
-              if (!currentUser) { router.push("/auth/login"); return; }
-              // No follow note here: nothing notifies on civic-issue follows
-              // (watched_concern_cards), verified or not. See feed.tsx's
-              // handleWatchIssue for the reason and the open decision.
-              if (watchBusy) return;
-              setWatchBusy(true);
-              const next = !watching;
-              const r = next ? await watchCivicIssue(currentUser.id, issueId)
-                             : await unwatchCivicIssue(currentUser.id, issueId);
-              if (r.success) { setWatching(next); setWatcherCount((c) => Math.max(0, c + (next ? 1 : -1))); }
-              else if (r.error) showToast(r.error);
-              setWatchBusy(false);
-            }}
-            style={[s.followBtn, watching && s.followBtnOn]}>
-            <Text style={[s.followBtnText, watching && s.followBtnTextOn]}>
-              {watchBusy ? "…" : watching ? "✓ Following" : "Follow"}
-            </Text>
-          </Pressable>
+          {/* No Follow on a civic issue: retired 2026-10-15, because nothing
+              ever notified on watched_concern_cards. Concern cards are
+              followable, on the card page and the feed. */}
         </View>
 
         {/* Where this stands */}
@@ -716,7 +689,6 @@ export default function IssueDetail() {
                 {responded
                   ? `Official responded ${respondedDays === 0 ? "today" : `${dayLabel(respondedDays)} ago`}`
                   : `No official response yet · ${dayLabel(awaitingDays)} and counting`}
-                {watcherCount > 0 ? ` · ${watcherCount} watching` : ""}
               </Text>
             </View>
           </View>
@@ -734,7 +706,6 @@ export default function IssueDetail() {
           <View style={s.summaryDiv} />
           <Text style={s.summaryStat}>
             {(issue.voice_count || 0).toLocaleString()} verified resident{(issue.voice_count || 0) === 1 ? "" : "s"} prioritized this
-            {watcherCount > 0 ? ` · ${watcherCount} watching` : ""}
           </Text>
           {subIssues.length > 0 && (
             <Text style={[s.summaryStat, { color: T.amberHi }]}>
@@ -1185,10 +1156,6 @@ const s = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 12 },
   budgetChip: { alignSelf: "flex-start", maxWidth: "100%", backgroundColor: T.amberLo, borderWidth: 1, borderColor: T.amberMid, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 10 },
   budgetChipText: { color: T.amberHi, fontSize: 12 },
-  followBtn: { borderWidth: 1, borderColor: T.amberMid, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginTop: 2 },
-  followBtnOn: { backgroundColor: T.tealLo, borderColor: T.teal },
-  followBtnText: { color: T.amberHi, fontSize: 12, fontWeight: "600" },
-  followBtnTextOn: { color: T.tealHi },
 
   stands: { borderWidth: 1, borderColor: T.amber, backgroundColor: T.surfaceHi, borderRadius: 12, padding: 14, marginBottom: 14 },
   standsHead: { fontSize: 10, fontWeight: "600", color: T.amberHi, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 },
