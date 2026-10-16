@@ -9,6 +9,8 @@
 // their standing through the application + admin-approval flow, never by typing
 // a title into this field.
 
+import { clipChars } from "./chars";
+
 const RESERVED = [
   // platform / system
   "townhall", "townhall cafe", "town hall cafe", "townhallcafe", "town hall",
@@ -51,19 +53,22 @@ export function reservedNameError(name: string): string | null {
 
 // The longest display name the database accepts: web migration 125's check is
 // char_length(display_name) <= 50, and the signup trigger trims to the same.
-// char_length counts characters (code points), not the UTF-16 units a JS
-// string's .length counts, so cut by code point. Same value as web's
+// Counted in characters, through lib/chars.ts. Same value as web's
 // DISPLAY_NAME_MAX in lib/onboardingFlow.mjs.
 export const DISPLAY_NAME_MAX = 50;
 
 // While typing: leading spaces are dropped (they would be trimmed anyway, and
 // must not use up the limit); everything else is cut at the limit.
 export function clipDisplayName(name: string): string {
-  return Array.from((name || "").replace(/^\s+/, "")).slice(0, DISPLAY_NAME_MAX).join("");
+  return clipChars((name || "").replace(/^\s+/, ""), DISPLAY_NAME_MAX);
 }
 
-// What is actually written: trimmed, then held to the limit, in the order the
-// signup trigger uses, so the app never keeps less than the server would.
+// What is actually written: trimmed, then held to the limit, then trimmed
+// again. The signup trigger is left(btrim(name), 50) with no final trim, so
+// where the 50th character is a space this keeps 49 and the trigger 50 plus a
+// trailing space. Both pass the check and this one is never longer; the two
+// are not identical, so do not treat this as the server's rule if the client's
+// value ever becomes the authoritative one.
 export function finalDisplayName(name: string): string {
-  return Array.from((name || "").trim()).slice(0, DISPLAY_NAME_MAX).join("").trim();
+  return clipChars((name || "").trim(), DISPLAY_NAME_MAX).trim();
 }
