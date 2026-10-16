@@ -7,7 +7,7 @@ import {
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
-import { getResidencyProof, validateProof, isVerifiedForCurrentNeighborhood, goVerify } from "../../lib/residency";
+import { getResidencyProof, validateProof } from "../../lib/residency";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
@@ -39,7 +39,6 @@ export default function IssueDetail() {
   const [replies, setReplies] = useState<any[]>([]);
   const [expertAnswers, setExpertAnswers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [verified, setVerified] = useState(true); // MOB-ISSUE-FOLLOW-GATE: assume verified until the check resolves, so we don't flash a false gate
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reaction, setReaction] = useState<"yes" | "no" | null>(null);
@@ -178,11 +177,6 @@ export default function IssueDetail() {
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
       setCurrentUser(user);
-      if (user) {
-        isVerifiedForCurrentNeighborhood(user.id).then(setVerified).catch(() => setVerified(false));
-      } else {
-        setVerified(false);
-      }
 
       // ── Phase 1: everything keyed on issueId (+ user), in parallel ──────
       // Only the official-response reaction and related-issues query need the
@@ -671,7 +665,6 @@ export default function IssueDetail() {
           <Pressable
             onPress={async () => {
               if (!currentUser) { router.push("/auth/login"); return; }
-              if (!verified) { goVerify(); return; }   // MOB-ISSUE-FOLLOW-GATE
               if (watchBusy) return;
               setWatchBusy(true);
               const next = !watching;

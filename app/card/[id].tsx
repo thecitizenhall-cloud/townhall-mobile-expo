@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import {
   watchConcernCard, unwatchConcernCard, recordConcernCardView, getResidentNeighborhoodSlug,
+  followNotifies, FOLLOW_NO_NOTIFY_NOTE,
 } from "../../lib/concernCards";
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import CardCorrection from "../../components/CardCorrection";
@@ -90,6 +91,9 @@ export default function ConcernCardDetail() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const [watched, setWatched] = useState(false);
   const [watching, setWatching] = useState(false);
+  // Whether following this card notifies this resident: the server's answer,
+  // null until known. The button promises notifications only when it is true.
+  const [notifying, setNotifying] = useState<boolean | null>(null);
   const [user, setUser] = useState<any>(null);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -212,6 +216,7 @@ export default function ConcernCardDetail() {
         return true;
       }));
       setWatched(!!watch);
+      if (watch && u) followNotifies(id).then(setNotifying);
       setRelatedPosts((posts || []).filter((p: any) => !p.profiles?.is_bot));
       setRelatedCards(related311 || []);
       setReplies(evtsHydrated);
@@ -228,8 +233,9 @@ export default function ConcernCardDetail() {
   }
 
   async function handleWatch() {
-    // Following is a standing action — guests must verify first.
-    if (!user || !verified) { goVerify(); return; }
+    // Open to any signed-in account since web migration 128; notifications
+    // need standing, and the note under the button says so when they won't come.
+    if (!user) { router.push("/auth/login"); return; }
     setWatching(true);
     // Only flip the button if the write actually succeeded — RLS can reject it
     // (standing gate), and an optimistic flip would hide that failure.
@@ -238,8 +244,8 @@ export default function ConcernCardDetail() {
       if (success) setWatched(false);
       else if (error) Alert.alert("Couldn't unfollow", error);
     } else {
-      const { success, error } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
-      if (success) setWatched(true);
+      const { success, error, notifying: n } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
+      if (success) { setWatched(true); setNotifying(n); }
       else if (error) Alert.alert("Couldn't follow", error);
     }
     setWatching(false);
@@ -407,10 +413,16 @@ export default function ConcernCardDetail() {
           style={[s.watchBtn, watched ? s.watchBtnOn : s.watchBtnOff]}
         >
           <Text style={[s.watchBtnText, { color: watched ? T.tealHi : T.amberHi }]}>
-            {watching ? "…" : !verified ? "Verify residency to follow"
-              : watched ? "✓ Following this item — you'll be notified of updates" : "+ Follow this item"}
+            {watching ? "…"
+              : watched ? (notifying === true ? "✓ Following this item — you'll be notified of updates" : "✓ Following this item")
+              : "+ Follow this item"}
           </Text>
         </Pressable>
+        {watched && notifying === false ? (
+          <Pressable onPress={goVerify} accessibilityRole="button">
+            <Text style={s.signInNote}>{FOLLOW_NO_NOTIFY_NOTE} <Text style={{ textDecorationLine: "underline" }}>Verify →</Text></Text>
+          </Pressable>
+        ) : null}
         {!user ? <Text style={s.signInNote}>Sign in to follow and receive updates</Text> : null}
 
         {/* Round-trip status */}

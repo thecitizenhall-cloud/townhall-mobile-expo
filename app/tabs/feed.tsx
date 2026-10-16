@@ -8,7 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
-import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
+import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue, FOLLOW_NO_NOTIFY_NOTE } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -354,8 +354,11 @@ export default function FeedScreen() {
     return true;
   }
 
+  // Following is open to any signed-in account since web migration 128; only
+  // notifications need standing, and the note below says so. Post, escalate
+  // and report still go through hasStanding().
   async function handleWatchCard(cardId: string) {
-    if (!hasStanding()) return;
+    if (!currentUser) { router.push("/auth/login"); return; }
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
@@ -364,14 +367,16 @@ export default function FeedScreen() {
       else if (r.error) showToast(r.error);
     } else {
       const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
-      if (r.success) setWatchedIds((prev) => new Set([...prev, cardId]));
-      else if (r.error) showToast(r.error);
+      if (r.success) {
+        setWatchedIds((prev) => new Set([...prev, cardId]));
+        if (r.notifying === false) showToast(FOLLOW_NO_NOTIFY_NOTE);
+      } else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
 
   async function handleWatchIssue(issueId: string) {
-    if (!hasStanding()) return;
+    if (!currentUser) { router.push("/auth/login"); return; }
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {

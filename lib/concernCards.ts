@@ -17,6 +17,25 @@ export async function getResidentNeighborhoodSlug(userId: string): Promise<strin
   return h?.slug ?? null;
 }
 
+// Since web migration 128 anyone signed in may follow a card; NOTIFICATIONS
+// need standing (a verified address in the matter's town), checked when they
+// are sent. A follow that succeeds and then never notifies has to say so, or it
+// looks healthy and is not. Web's words, verbatim; keep the two the same.
+export const FOLLOW_NO_NOTIFY_NOTE =
+  "Following. Townhall will notify you when this moves once you verify your address in this town.";
+
+// Will a follow on this card notify the signed-in resident? The server's
+// answer (migration 127's is_verified_resident_for_card). null when it cannot
+// say, and then no note is shown and no notification is promised either.
+export async function followNotifies(concernCardId: string): Promise<boolean | null> {
+  try {
+    const { data, error } = await supabase.rpc("is_verified_resident_for_card", { p_card_id: concernCardId });
+    return !error && typeof data === "boolean" ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 // Every follow/unfollow helper returns `error` as words a resident can read,
 // never the database's own message, plus `reason` so a caller can tell a
 // standing refusal (no verified address) from anything else. 23505 is an
@@ -41,11 +60,19 @@ export async function unwatchCivicIssue(userId: string, issueId: string): Promis
   return watchResult(error, "change what you follow");
 }
 
-export async function watchConcernCard(userId: string, concernCardId: string, neighborhoodId?: string | null): Promise<WatchResult> {
+export async function watchConcernCard(
+  userId: string, concernCardId: string, neighborhoodId?: string | null,
+): Promise<WatchResult & { notifying: boolean | null }> {
+  // Since 128 the server sets neighborhood_id from the follower's profile (or
+  // leaves it null) and ignores what is sent; the slug goes only when known.
+  // Never the old "unknown" placeholder, which looked like a value and routed
+  // every notification for the follow nowhere.
   const { error } = await supabase.from("card_watches").insert({
-    user_id: userId, concern_card_id: concernCardId, neighborhood_id: neighborhoodId || "unknown",
+    user_id: userId, concern_card_id: concernCardId,
+    ...(neighborhoodId ? { neighborhood_id: neighborhoodId } : {}),
   });
-  return watchResult(error, "follow this matter");
+  const result = watchResult(error, "follow this matter");
+  return { ...result, notifying: result.success ? await followNotifies(concernCardId) : null };
 }
 
 export async function unwatchConcernCard(userId: string, concernCardId: string): Promise<WatchResult> {
