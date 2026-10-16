@@ -31,7 +31,7 @@ export const FOLLOW_NOTIFY_UNKNOWN_NOTE =
 
 // Will a follow on this card notify the signed-in resident? The server's
 // answer (migration 127's is_verified_resident_for_card). null when it cannot
-// say, and then no note is shown and no notification is promised either.
+// say: callers then show FOLLOW_NOTIFY_UNKNOWN_NOTE and promise nothing.
 export async function followNotifies(concernCardId: string): Promise<boolean | null> {
   try {
     const { data, error } = await supabase.rpc("is_verified_resident_for_card", { p_card_id: concernCardId });
