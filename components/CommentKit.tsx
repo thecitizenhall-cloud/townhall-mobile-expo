@@ -12,7 +12,7 @@
 // stack of cards on mobile, which is the native rendering here.
 import { useState } from "react";
 import {
-  View, Text, TextInput, Pressable, StyleSheet,
+  View, Text, TextInput, Pressable, StyleSheet, Alert,
 } from "react-native";
 import { T } from "../lib/theme";
 import ReportButton from "./ReportButton";
@@ -131,7 +131,9 @@ function StanceComposer({
   currentUser, onPost, placeholder,
 }: {
   currentUser: any;
-  onPost: (args: { body: string; stance: Stance }) => Promise<void>;
+  // Resolve false when the post did not land: the composer then keeps the
+  // resident's words instead of clearing them as if it had.
+  onPost: (args: { body: string; stance: Stance }) => Promise<boolean>;
   placeholder?: string;
 }) {
   const [text, setText] = useState("");
@@ -145,9 +147,14 @@ function StanceComposer({
     if (!body || posting) return;
     setPosting(true);
     try {
-      await onPost({ body, stance });
-      setText("");
-      setStance("neutral");
+      if (await onPost({ body, stance })) {
+        setText("");
+        setStance("neutral");
+      }
+    } catch {
+      // A post that threw (a dropped connection mid-request) gets said too;
+      // the words stay in the box either way.
+      Alert.alert("Not posted", "That didn't go through. Check your connection and try again.");
     } finally {
       setPosting(false);
     }
@@ -193,7 +200,7 @@ export default function CommentKit({
   comments: KitComment[];
   subIssues: SubIssue[];
   timeAgo?: (d?: string | null) => string;
-  onPost: (args: { body: string; stance: Stance; subId: string | null }) => Promise<void>;
+  onPost: (args: { body: string; stance: Stance; subId: string | null }) => Promise<boolean>;
   onCreateSubIssue: (title: string) => Promise<void>;
 }) {
   const [showAdd, setShowAdd] = useState(false);

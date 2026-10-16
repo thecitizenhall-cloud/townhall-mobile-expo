@@ -10,6 +10,7 @@ import {
 } from "../../lib/concernCards";
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import CardCorrection from "../../components/CardCorrection";
+import { writeErrorMessage } from "../../lib/writeError";
 import { T } from "../../lib/theme";
 import { timeAgo } from "../../lib/format";
 import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
@@ -282,21 +283,33 @@ export default function ConcernCardDetail() {
     }
   }
 
-  async function postCardComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }) {
-    if (!user || !body.trim()) return;
+  async function postCardComment({ body, stance, subId }: { body: string; stance: Stance; subId: string | null }): Promise<boolean> {
+    if (!user || !body.trim()) return false;
+    // CQ-MOBILE-CARD-EVENTS: neighborhood_id must be the resident's neighborhood
+    // slug (e.g. "jackson-general"), not the engine's municipality_id (e.g.
+    // "jackson_nj") — matches web's ConcernCardDetailScreen fix (N-1).
+    // It is the notifier's routing key. This used to fall back to the literal
+    // "unknown", which routes every notification for the comment nowhere,
+    // silently. A slug we cannot resolve is a failure to say, not a default.
+    const slug = await getResidentNeighborhoodSlug(user.id);
+    if (!slug) {
+      Alert.alert("Comment not posted",
+        "We couldn't tell which neighborhood you're in, so your comment wasn't posted. What you wrote is still here. Check your connection, or verify your address, then try again.");
+      return false;
+    }
     const { data, error } = await supabase.from("card_events").insert({
-      // CQ-MOBILE-CARD-EVENTS: neighborhood_id must be the resident's neighborhood
-      // slug (e.g. "jackson-general"), not the engine's municipality_id (e.g.
-      // "jackson_nj") — matches web's ConcernCardDetailScreen fix (N-1).
-      concern_card_id: id, neighborhood_id: (await getResidentNeighborhoodSlug(user.id)) || "unknown",
+      concern_card_id: id, neighborhood_id: slug,
       event_type: "comment", user_id: user.id, body: body.trim(), stance, sub_issue_id: subId || null,
     }).select("*").single();  // no profiles embed — card_events has no FK to profiles (400s)
-    if (error) return;
+    // Used to return here with no word to the resident. The speaking gate
+    // refuses unverified accounts at this insert, so Post would do nothing.
+    if (error) { Alert.alert("Comment not posted", writeErrorMessage(error, "comment on this matter")); return false; }
     // Attach author name locally (it's the current user); reloads hydrate from profiles.
     if (data) {
       const withAuthor = { ...data, profiles: { display_name: user.user_metadata?.display_name || null } };
       setReplies((prev) => (prev.some((r) => r.id === withAuthor.id) ? prev : [withAuthor, ...prev]));
     }
+    return true;
   }
 
   async function createCardSubIssue(title: string) {
