@@ -16,6 +16,14 @@ import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
 import { replacePosition } from "../../lib/positions";
 import { charCount } from "../../lib/chars";
+
+// The shortest recognition statement the app accepts with a position. The
+// database's own floor is 20 characters (disagreements check). This is an app
+// choice above it, and it used to be checked with .length, which was safe only
+// by margin: 50 UTF-16 units is at least 25 characters, so it always cleared
+// 20. Counted in characters now, so that if either number moves, the margin
+// is not what keeps it working.
+const POSITION_MIN = 50;
 import IssueTimeline from "../../components/IssueTimeline";
 import CoalitionBar from "../../components/CoalitionBar";
 
@@ -282,7 +290,7 @@ export default function IssueDetail() {
   }
 
   async function submitAgreement() {
-    if (!currentUser || agreeInput.trim().length < 50) return;
+    if (!currentUser || charCount(agreeInput.trim()) < POSITION_MIN) return;
     setAgreePosting(true);
     try {
       const r = await replacePosition(currentUser.id, issueId, "agree", agreeInput.trim());
@@ -410,7 +418,7 @@ export default function IssueDetail() {
       }
 
       const rec = confirmRecognition.trim();
-      if ((confirmStance === "support" || confirmStance === "oppose") && rec.length >= 50) {
+      if ((confirmStance === "support" || confirmStance === "oppose") && charCount(rec) >= POSITION_MIN) {
         const position = confirmStance === "support" ? "agree" : "disagree";
         const r = await replacePosition(currentUser.id, issueId, position, rec);
         if (r.ok) {
@@ -639,7 +647,7 @@ export default function IssueDetail() {
   ];
   const stakeOk = charCount(confirmStake.trim()) >= 10;
   const needRec = confirmStance === "support" || confirmStance === "oppose";
-  const recOk = confirmRecognition.trim().length >= 50;
+  const recOk = charCount(confirmRecognition.trim()) >= POSITION_MIN;
   const canRecord = stakeOk || (needRec && recOk);
   const recPrompt = confirmStance === "support"
     ? "What do you think people who oppose this care about?"
@@ -843,7 +851,7 @@ export default function IssueDetail() {
                     <TextInput style={s.stakeInput} multiline placeholder="Even though I disagree, I recognise that…"
                       placeholderTextColor={T.creamFaint} value={confirmRecognition} maxLength={300} onChangeText={setConfirmRecognition} />
                     <Text style={[s.fieldHint, !recOk && { color: T.amberHi }]}>
-                      {recOk ? "Recorded alongside your position" : `Needed to register your position (${Math.max(0, 50 - confirmRecognition.trim().length)} more characters)`}
+                      {recOk ? "Recorded alongside your position" : `Needed to register your position (${Math.max(0, POSITION_MIN - charCount(confirmRecognition.trim()))} more characters)`}
                     </Text>
                   </>
                 )}
@@ -950,13 +958,13 @@ export default function IssueDetail() {
             <TextInput style={s.stakeInput} multiline placeholder="Even though I agree, I recognize that opponents care about…"
               placeholderTextColor={T.creamFaint} value={agreeInput} maxLength={300} onChangeText={setAgreeInput} />
             <View style={s.rowBetween}>
-              <Text style={s.counter}>{agreeInput.length}/300 · min 50</Text>
+              <Text style={s.counter}>{charCount(agreeInput)}/300 · min {POSITION_MIN}</Text>
               <View style={s.rowGap}>
                 <Pressable onPress={() => { setShowAgree(false); setAgreeInput(""); }} style={s.ghostBtn}>
                   <Text style={s.ghostBtnText}>Cancel</Text>
                 </Pressable>
-                <Pressable onPress={submitAgreement} disabled={agreePosting || agreeInput.trim().length < 50}
-                  style={[s.tealBtn, agreeInput.trim().length < 50 && s.disabled]}>
+                <Pressable onPress={submitAgreement} disabled={agreePosting || charCount(agreeInput.trim()) < POSITION_MIN}
+                  style={[s.tealBtn, charCount(agreeInput.trim()) < POSITION_MIN && s.disabled]}>
                   <Text style={s.tealBtnText}>{agreePosting ? "Saving…" : "Record"}</Text>
                 </Pressable>
               </View>
@@ -1160,12 +1168,12 @@ export default function IssueDetail() {
             <Text style={s.sheetNote}>
               Your disagreement and this recognition will both be shown. The most thoughtful perspectives are surfaced first.
             </Text>
-            <Pressable onPress={submitDisagreement} disabled={recognition.trim().length < 50 || submittingD}
-              style={[s.sheetBtn, recognition.trim().length < 50 && s.disabled]}>
+            <Pressable onPress={submitDisagreement} disabled={charCount(recognition.trim()) < POSITION_MIN || submittingD}
+              style={[s.sheetBtn, charCount(recognition.trim()) < POSITION_MIN && s.disabled]}>
               <Text style={s.sheetBtnText}>{submittingD ? "Submitting…" : "Register my perspective"}</Text>
             </Pressable>
-            {recognition.trim().length < 50 && recognition.length > 0 && (
-              <Text style={s.sheetHint}>Keep going — a bit more context helps ({50 - recognition.trim().length} more characters)</Text>
+            {charCount(recognition.trim()) < POSITION_MIN && recognition.length > 0 && (
+              <Text style={s.sheetHint}>Keep going — a bit more context helps ({POSITION_MIN - charCount(recognition.trim())} more characters)</Text>
             )}
           </View>
         </KeyboardAvoidingView>
