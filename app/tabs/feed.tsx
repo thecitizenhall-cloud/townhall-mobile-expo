@@ -378,6 +378,11 @@ export default function FeedScreen() {
     setWatchLoading(null);
   }
 
+  // No FOLLOW_NO_NOTIFY_NOTE here, on purpose. That note says notifications
+  // come once you verify; for a civic ISSUE they never come, verified or not,
+  // because nothing notifies on watched_concern_cards at all. Whether this
+  // follow path is retired or gets a notifier is an open product decision;
+  // until then, do not add a note that promises one.
   async function handleWatchIssue(issueId: string) {
     if (!currentUser) { router.push("/auth/login"); return; }
     setWatchLoading(issueId);

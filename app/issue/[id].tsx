@@ -665,6 +665,9 @@ export default function IssueDetail() {
           <Pressable
             onPress={async () => {
               if (!currentUser) { router.push("/auth/login"); return; }
+              // No follow note here: nothing notifies on civic-issue follows
+              // (watched_concern_cards), verified or not. See feed.tsx's
+              // handleWatchIssue for the reason and the open decision.
               if (watchBusy) return;
               setWatchBusy(true);
               const next = !watching;
