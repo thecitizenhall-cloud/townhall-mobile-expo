@@ -8,7 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
-import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
+import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -354,8 +354,11 @@ export default function FeedScreen() {
     return true;
   }
 
+  // Following is open to any signed-in account since web migration 128; only
+  // notifications need standing, and the note below says so. Post, escalate
+  // and report still go through hasStanding().
   async function handleWatchCard(cardId: string) {
-    if (!hasStanding()) return;
+    if (!currentUser) { router.push("/auth/login"); return; }
     setWatchLoading(cardId);
     const isOn = watchedIds.has(cardId);
     if (isOn) {
@@ -364,14 +367,24 @@ export default function FeedScreen() {
       else if (r.error) showToast(r.error);
     } else {
       const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
-      if (r.success) setWatchedIds((prev) => new Set([...prev, cardId]));
-      else if (r.error) showToast(r.error);
+      if (r.success) {
+        setWatchedIds((prev) => new Set([...prev, cardId]));
+        // If the server could not say, say that rather than guess: the feed's
+        // own residency check cannot see whether this card is in your town.
+        if (r.notifying === false) showToast(FOLLOW_NO_NOTIFY_NOTE);
+        else if (r.notifying === null) showToast(FOLLOW_NOTIFY_UNKNOWN_NOTE);
+      } else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
   }
 
+  // No FOLLOW_NO_NOTIFY_NOTE here, on purpose. That note says notifications
+  // come once you verify; for a civic ISSUE they never come, verified or not,
+  // because nothing notifies on watched_concern_cards at all. Whether this
+  // follow path is retired or gets a notifier is an open product decision;
+  // until then, do not add a note that promises one.
   async function handleWatchIssue(issueId: string) {
-    if (!hasStanding()) return;
+    if (!currentUser) { router.push("/auth/login"); return; }
     setWatchLoading(issueId);
     const isOn = watchedIds.has(issueId);
     if (isOn) {
