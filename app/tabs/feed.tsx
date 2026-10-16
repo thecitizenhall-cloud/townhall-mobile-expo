@@ -369,7 +369,9 @@ export default function FeedScreen() {
       const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
       if (r.success) {
         setWatchedIds((prev) => new Set([...prev, cardId]));
-        if (r.notifying === false) showToast(FOLLOW_NO_NOTIFY_NOTE);
+        // If the server could not answer, the feed's own residency check
+        // decides, so an unverified resident still gets the note.
+        if (r.notifying === false || (r.notifying === null && verified === false)) showToast(FOLLOW_NO_NOTIFY_NOTE);
       } else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);

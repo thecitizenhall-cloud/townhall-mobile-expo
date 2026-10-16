@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, Image, Alert, KeyboardAvoidingView,
 } from "react-native";
-import { useLocalSearchParams, router, Stack } from "expo-router";
+import { useLocalSearchParams, router, Stack, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import {
@@ -94,6 +94,13 @@ export default function ConcernCardDetail() {
   // Whether following this card notifies this resident: the server's answer,
   // null until known. The button promises notifications only when it is true.
   const [notifying, setNotifying] = useState<boolean | null>(null);
+  // Only the latest request may set `notifying`, so an answer for a card the
+  // screen has moved off, or one older than a fresh follow, is dropped.
+  const notifyReq = useRef(0);
+  function refreshNotifying(cardId: string) {
+    const seq = ++notifyReq.current;
+    followNotifies(cardId).then((n) => { if (seq === notifyReq.current) setNotifying(n); });
+  }
   const [user, setUser] = useState<any>(null);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -107,7 +114,16 @@ export default function ConcernCardDetail() {
   const [reportInfo, setReportInfo] = useState<any>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { notifyReq.current++; setNotifying(null); load(); /* eslint-disable-next-line */ }, [id]);
+
+  // Coming back to this screen (e.g. from verifying an address) re-asks
+  // whether the follow notifies, so the note does not outlive its reason.
+  useFocusEffect(useCallback(() => {
+    if (!user || !watched) return;
+    isVerifiedForCurrentNeighborhood(user.id).then(setVerified).catch(() => {});
+    refreshNotifying(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, watched, id]));
 
   async function load() {
     setLoadError(null);
@@ -216,7 +232,7 @@ export default function ConcernCardDetail() {
         return true;
       }));
       setWatched(!!watch);
-      if (watch && u) followNotifies(id).then(setNotifying);
+      if (watch && u) refreshNotifying(id);
       setRelatedPosts((posts || []).filter((p: any) => !p.profiles?.is_bot));
       setRelatedCards(related311 || []);
       setReplies(evtsHydrated);
@@ -245,7 +261,7 @@ export default function ConcernCardDetail() {
       else if (error) Alert.alert("Couldn't unfollow", error);
     } else {
       const { success, error, notifying: n } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
-      if (success) { setWatched(true); setNotifying(n); }
+      if (success) { notifyReq.current++; setWatched(true); setNotifying(n); }
       else if (error) Alert.alert("Couldn't follow", error);
     }
     setWatching(false);
@@ -418,7 +434,9 @@ export default function ConcernCardDetail() {
               : "+ Follow this item"}
           </Text>
         </Pressable>
-        {watched && notifying === false ? (
+        {/* When the server could not answer, fall back to this screen's own
+            residency check: an unverified resident still gets the note. */}
+        {watched && (notifying === false || (notifying === null && !!user && !verified)) ? (
           <Pressable onPress={goVerify} accessibilityRole="button">
             <Text style={s.signInNote}>{FOLLOW_NO_NOTIFY_NOTE} <Text style={{ textDecorationLine: "underline" }}>Verify →</Text></Text>
           </Pressable>
