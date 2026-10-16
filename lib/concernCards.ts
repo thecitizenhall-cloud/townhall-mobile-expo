@@ -24,6 +24,11 @@ export async function getResidentNeighborhoodSlug(userId: string): Promise<strin
 export const FOLLOW_NO_NOTIFY_NOTE =
   "Following. Townhall will notify you when this moves once you verify your address in this town.";
 
+// When the server could not say whether a follow notifies, say exactly that,
+// rather than guess from a local check that cannot see the card's town.
+export const FOLLOW_NOTIFY_UNKNOWN_NOTE =
+  "Following. We couldn't check whether you'll be notified about this one; open it again later to see.";
+
 // Will a follow on this card notify the signed-in resident? The server's
 // answer (migration 127's is_verified_resident_for_card). null when it cannot
 // say, and then no note is shown and no notification is promised either.

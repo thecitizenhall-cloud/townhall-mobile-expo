@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import {
   watchConcernCard, unwatchConcernCard, recordConcernCardView, getResidentNeighborhoodSlug,
-  followNotifies, FOLLOW_NO_NOTIFY_NOTE,
+  followNotifies, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE,
 } from "../../lib/concernCards";
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import CardCorrection from "../../components/CardCorrection";
@@ -93,13 +93,20 @@ export default function ConcernCardDetail() {
   const [watching, setWatching] = useState(false);
   // Whether following this card notifies this resident: the server's answer,
   // null until known. The button promises notifications only when it is true.
-  const [notifying, setNotifying] = useState<boolean | null>(null);
+  // null = not asked yet; "unknown" = asked, and the server could not say.
+  const [notifying, setNotifying] = useState<boolean | "unknown" | null>(null);
   // Only the latest request may set `notifying`, so an answer for a card the
   // screen has moved off, or one older than a fresh follow, is dropped.
+  // `shownId` is the card on screen now; anything that resolves for another
+  // card is dropped, however late it lands.
   const notifyReq = useRef(0);
+  const shownId = useRef(id);
   function refreshNotifying(cardId: string) {
+    if (cardId !== shownId.current) return;
     const seq = ++notifyReq.current;
-    followNotifies(cardId).then((n) => { if (seq === notifyReq.current) setNotifying(n); });
+    followNotifies(cardId).then((n) => {
+      if (seq === notifyReq.current && cardId === shownId.current) setNotifying(n ?? "unknown");
+    });
   }
   const [user, setUser] = useState<any>(null);
   const [verified, setVerified] = useState(false);
@@ -114,7 +121,7 @@ export default function ConcernCardDetail() {
   const [reportInfo, setReportInfo] = useState<any>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  useEffect(() => { notifyReq.current++; setNotifying(null); load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { shownId.current = id; notifyReq.current++; setNotifying(null); load(); /* eslint-disable-next-line */ }, [id]);
 
   // Coming back to this screen (e.g. from verifying an address) re-asks
   // whether the follow notifies, so the note does not outlive its reason.
@@ -260,8 +267,10 @@ export default function ConcernCardDetail() {
       if (success) setWatched(false);
       else if (error) Alert.alert("Couldn't unfollow", error);
     } else {
-      const { success, error, notifying: n } = await watchConcernCard(user.id, id, await getResidentNeighborhoodSlug(user.id));
-      if (success) { notifyReq.current++; setWatched(true); setNotifying(n); }
+      const cardId = id;
+      const { success, error, notifying: n } = await watchConcernCard(user.id, cardId, await getResidentNeighborhoodSlug(user.id));
+      if (cardId !== shownId.current) { setWatching(false); return; }
+      if (success) { notifyReq.current++; setWatched(true); setNotifying(n ?? "unknown"); }
       else if (error) Alert.alert("Couldn't follow", error);
     }
     setWatching(false);
@@ -434,12 +443,15 @@ export default function ConcernCardDetail() {
               : "+ Follow this item"}
           </Text>
         </Pressable>
-        {/* When the server could not answer, fall back to this screen's own
-            residency check: an unverified resident still gets the note. */}
-        {watched && (notifying === false || (notifying === null && !!user && !verified)) ? (
+        {watched && notifying === false ? (
           <Pressable onPress={goVerify} accessibilityRole="button">
             <Text style={s.signInNote}>{FOLLOW_NO_NOTIFY_NOTE} <Text style={{ textDecorationLine: "underline" }}>Verify →</Text></Text>
           </Pressable>
+        ) : null}
+        {/* The server could not say. Say that, not a guess: a local residency
+            check cannot see whether this card is in the resident's town. */}
+        {watched && notifying === "unknown" ? (
+          <Text style={s.signInNote}>{FOLLOW_NOTIFY_UNKNOWN_NOTE}</Text>
         ) : null}
         {!user ? <Text style={s.signInNote}>Sign in to follow and receive updates</Text> : null}
 

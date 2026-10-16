@@ -8,7 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Location from "expo-location";
 import { supabase, CivicItem } from "../../lib/supabase";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
-import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue, FOLLOW_NO_NOTIFY_NOTE } from "../../lib/concernCards";
+import { watchConcernCard, unwatchConcernCard, watchCivicIssue, unwatchCivicIssue, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
 
@@ -369,9 +369,10 @@ export default function FeedScreen() {
       const r = await watchConcernCard(currentUser.id, cardId, neighborhoodSlug);
       if (r.success) {
         setWatchedIds((prev) => new Set([...prev, cardId]));
-        // If the server could not answer, the feed's own residency check
-        // decides, so an unverified resident still gets the note.
-        if (r.notifying === false || (r.notifying === null && verified === false)) showToast(FOLLOW_NO_NOTIFY_NOTE);
+        // If the server could not say, say that rather than guess: the feed's
+        // own residency check cannot see whether this card is in your town.
+        if (r.notifying === false) showToast(FOLLOW_NO_NOTIFY_NOTE);
+        else if (r.notifying === null) showToast(FOLLOW_NOTIFY_UNKNOWN_NOTE);
       } else if (r.error) showToast(r.error);
     }
     setWatchLoading(null);
