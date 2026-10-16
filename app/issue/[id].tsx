@@ -15,6 +15,7 @@ import CommentKit, { KitComment, Stance, normalizeStance } from "../../component
 import { watchCivicIssue, unwatchCivicIssue } from "../../lib/concernCards";
 import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
 import { replacePosition } from "../../lib/positions";
+import { charCount } from "../../lib/chars";
 import IssueTimeline from "../../components/IssueTimeline";
 import CoalitionBar from "../../components/CoalitionBar";
 
@@ -307,7 +308,7 @@ export default function IssueDetail() {
   }
 
   async function submitStake() {
-    if (!currentUser || stakeInput.trim().length < 10) return;
+    if (!currentUser || charCount(stakeInput.trim()) < 10) return;
     setStakingOp(true);
     try {
       if (myStake) {
@@ -387,7 +388,7 @@ export default function IssueDetail() {
       };
 
       const stakeBody = confirmStake.trim();
-      if (stakeBody.length >= 10) {
+      if (charCount(stakeBody) >= 10) {
         if (myStake) {
           const { data, error } = await supabase.from("issue_stakes")
             .update({ body: stakeBody }).eq("id", myStake.id).select("*, profiles:user_id(display_name)").single();
@@ -562,7 +563,7 @@ export default function IssueDetail() {
   }
 
   async function flagForExpert() {
-    if (!currentUser || expertReason.trim().length < 10) return;
+    if (!currentUser || charCount(expertReason.trim()) < 10) return;
     setFlaggingExpert(true);
     const { error } = await supabase.from("expert_questions").insert({
       author_id: currentUser.id, issue_id: issueId, neighborhood_id: issue?.neighborhood_id,
@@ -636,7 +637,7 @@ export default function IssueDetail() {
     { key: "unsure", label: "I'm unsure", color: T.amberHi, bg: T.amberLo, bd: T.amber },
     { key: "oppose", label: "I oppose it", color: T.redHi, bg: T.redLo, bd: T.red },
   ];
-  const stakeOk = confirmStake.trim().length >= 10;
+  const stakeOk = charCount(confirmStake.trim()) >= 10;
   const needRec = confirmStance === "support" || confirmStance === "oppose";
   const recOk = confirmRecognition.trim().length >= 50;
   const canRecord = stakeOk || (needRec && recOk);
@@ -893,7 +894,7 @@ export default function IssueDetail() {
                       <Text style={s.ghostBtnText}>Cancel</Text>
                     </Pressable>
                     <Pressable onPress={async () => { await submitStake(); setShowStakeInput(false); }}
-                      disabled={stakingOp || stakeInput.trim().length < 10} style={[s.amberBtn, stakeInput.trim().length < 10 && s.disabled]}>
+                      disabled={stakingOp || charCount(stakeInput.trim()) < 10} style={[s.amberBtn, charCount(stakeInput.trim()) < 10 && s.disabled]}>
                       <Text style={s.amberBtnText}>{stakingOp ? "Saving…" : myStake ? "Update" : "Share stake"}</Text>
                     </Pressable>
                   </View>
@@ -1065,15 +1066,15 @@ export default function IssueDetail() {
                 <TextInput style={s.stakeInput} autoFocus multiline placeholder="e.g. Is this variance allowed under the current zoning code?"
                   placeholderTextColor={T.creamFaint} value={expertReason} maxLength={300} onChangeText={setExpertReason} />
                 <View style={s.rowBetween}>
-                  <Text style={[s.counter, expertReason.trim().length < 10 && { color: T.amberHi }]}>
-                    {expertReason.trim().length >= 10 ? "Sent anonymously to verified experts" : `${Math.max(0, 10 - expertReason.trim().length)} more characters`}
+                  <Text style={[s.counter, charCount(expertReason.trim()) < 10 && { color: T.amberHi }]}>
+                    {charCount(expertReason.trim()) >= 10 ? "Sent anonymously to verified experts" : `${Math.max(0, 10 - charCount(expertReason.trim()))} more characters`}
                   </Text>
                   <View style={s.rowGap}>
                     <Pressable onPress={() => { setShowExpertFlag(false); setExpertReason(""); }} style={s.ghostBtn}>
                       <Text style={s.ghostBtnText}>Cancel</Text>
                     </Pressable>
-                    <Pressable onPress={flagForExpert} disabled={flaggingExpert || expertReason.trim().length < 10}
-                      style={[s.purpleBtn, expertReason.trim().length < 10 && s.disabled]}>
+                    <Pressable onPress={flagForExpert} disabled={flaggingExpert || charCount(expertReason.trim()) < 10}
+                      style={[s.purpleBtn, charCount(expertReason.trim()) < 10 && s.disabled]}>
                       <Text style={s.purpleBtnText}>{flaggingExpert ? "Flagging…" : "Flag for expert input"}</Text>
                     </Pressable>
                   </View>

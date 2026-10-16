@@ -14,14 +14,13 @@ import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import { supabase } from "../lib/supabase";
 import { T } from "../lib/theme";
+import { charCount, clipChars } from "../lib/chars";
 
 const MIN = 10;
 const MAX = 2000;
 
-// The database counts characters (char_length); a JS string's length counts
-// UTF-16 units, so five emoji would pass a .length check at 10 and then be
-// refused. Count and cut by code point instead.
-const chars = (v: string) => Array.from(v);
+// The database counts characters (char_length), so count and cut with
+// lib/chars.ts, not .length.
 
 export default function CardCorrection({ cardId }: { cardId: string }) {
   const [open, setOpen] = useState(false);
@@ -31,15 +30,15 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
 
-  const tooShort = chars(claim.trim()).length < MIN;
+  const tooShort = charCount(claim.trim()) < MIN;
 
   async function submit() {
     const c = claim.trim();
-    if (chars(c).length < MIN) { setErr("Please describe what's inaccurate (at least 10 characters)."); return; }
+    if (charCount(c) < MIN) { setErr("Please describe what's inaccurate (at least 10 characters)."); return; }
     setBusy(true); setErr("");
     const { error } = await supabase.from("card_corrections").insert({
       concern_card_id: cardId,
-      claim: chars(c).slice(0, MAX).join(""),
+      claim: clipChars(c, MAX),
       contact_email: email.trim() ? email.trim().slice(0, 254) : null,
     });
     setBusy(false);
@@ -82,7 +81,7 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
       <TextInput
         style={s.input}
         value={claim}
-        onChangeText={(v) => setClaim(chars(v).slice(0, MAX).join(""))}
+        onChangeText={(v) => setClaim(clipChars(v, MAX))}
         maxLength={MAX}
         multiline
         placeholder="What is inaccurate, and what does the record actually say?"

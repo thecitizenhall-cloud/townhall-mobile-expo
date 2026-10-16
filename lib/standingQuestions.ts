@@ -19,6 +19,7 @@
 
 import { supabase } from "./supabase";
 import { writeErrorMessage } from "./writeError";
+import { charCount } from "./chars";
 import type { ConditionKind, StandingQuestion } from "./questionVocab";
 
 export * from "./questionVocab";
@@ -36,7 +37,7 @@ export async function askQuestion(
 ): Promise<{ ok: boolean; error?: string; question?: StandingQuestion }> {
   if (!userId) return { ok: false, error: "Sign in to ask a question." };
   const text = String(body || "").trim();
-  if (text.length < 3) return { ok: false, error: "Write the question first." };
+  if (charCount(text) < 3) return { ok: false, error: "Write the question first." };
 
   const { data, error } = await supabase.from("card_questions").insert({
     concern_card_id: card.id,

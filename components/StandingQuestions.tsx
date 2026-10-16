@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, Linking, ActivityIndicator } from "react-native";
 import { T } from "../lib/theme";
+import { charCount } from "../lib/chars";
 import { goVerify } from "../lib/residency";
 import {
   CONDITIONS, conditionSentence, receiptFor, resolutionSentence, returnPromise,
@@ -187,8 +188,8 @@ export default function StandingQuestions({ card, user, verified }: Props) {
 
           <View style={s.actions}>
             <Pressable
-              style={[s.submit, (busy || body.trim().length < 3) ? s.submitOff : null]}
-              disabled={busy || body.trim().length < 3}
+              style={[s.submit, (busy || charCount(body.trim()) < 3) ? s.submitOff : null]}
+              disabled={busy || charCount(body.trim()) < 3}
               onPress={submit}>
               <Text style={s.submitText}>{busy ? "Putting it on the record…" : "Ask this question"}</Text>
             </Pressable>
