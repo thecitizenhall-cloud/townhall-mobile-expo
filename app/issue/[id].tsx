@@ -958,7 +958,10 @@ export default function IssueDetail() {
             <TextInput style={s.stakeInput} multiline placeholder="Even though I agree, I recognize that opponents care about…"
               placeholderTextColor={T.creamFaint} value={agreeInput} maxLength={300} onChangeText={setAgreeInput} />
             <View style={s.rowBetween}>
-              <Text style={s.counter}>{charCount(agreeInput)}/300 · min {POSITION_MIN}</Text>
+              <Text style={s.counter}>{charCount(agreeInput.trim()) < POSITION_MIN
+                  ? `${POSITION_MIN - charCount(agreeInput.trim())} more characters`
+                  // Against the box's own maxLength, which counts UTF-16 units.
+                  : `${agreeInput.length}/300`}</Text>
               <View style={s.rowGap}>
                 <Pressable onPress={() => { setShowAgree(false); setAgreeInput(""); }} style={s.ghostBtn}>
                   <Text style={s.ghostBtnText}>Cancel</Text>
