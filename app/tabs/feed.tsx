@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
-  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView,
+  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Keyboard,
 } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -157,6 +157,19 @@ export default function FeedScreen() {
   const [reportCoordSource, setReportCoordSource] = useState<"gps" | "geocode" | "pin" | null>(null);
   const [geocodingReport, setGeocodingReport] = useState(false);
   const reportMapRef = useRef<WebView>(null);
+  // The report form scrolls inside its own card, and nothing scrolls it to the
+  // field being typed in. The description is its last field, below the map, so
+  // on a short phone the keyboard covered it. Scroll to the end when it takes
+  // focus, and again once the keyboard has finished opening, because the card
+  // only reaches its shrunken height after that.
+  const reportScrollRef = useRef<ScrollView>(null);
+  const reportDescFocused = useRef(false);
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidShow", () => {
+      if (reportDescFocused.current) reportScrollRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => sub.remove();
+  }, []);
   const [reportMapReady, setReportMapReady] = useState(false);
   const [locating, setLocating] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -831,7 +844,7 @@ export default function FeedScreen() {
             </View>
           </View>
         ) : (
-          <ScrollView style={s.reportCard} keyboardShouldPersistTaps="handled">
+          <ScrollView ref={reportScrollRef} style={s.reportCard} keyboardShouldPersistTaps="handled">
             {composeModes("report")}
             <Text style={s.reportHead}>Report a street issue</Text>
             <View style={s.reportTypes}>
@@ -882,7 +895,9 @@ export default function FeedScreen() {
             {geocodingReport ? <Text style={s.mapHint}>Finding that location…</Text> : null}
             <Text style={s.mapHint}>Drag the pin to the exact spot — the location is published with your report.</Text>
             <TextInput style={[s.composeInput, { minHeight: 70, marginTop: 8 }]} multiline placeholder="Describe the issue briefly"
-              placeholderTextColor={T.creamFaint} value={reportDesc} onChangeText={setReportDesc} />
+              placeholderTextColor={T.creamFaint} value={reportDesc} onChangeText={setReportDesc}
+              onFocus={() => { reportDescFocused.current = true; reportScrollRef.current?.scrollToEnd({ animated: true }); }}
+              onBlur={() => { reportDescFocused.current = false; }} />
             <View style={s.composeBtns}>
               <Pressable onPress={() => { setReportOpen(false); setReportDesc(""); setReportLoc(""); setReportCoords(null); setReportCoordSource(null); }} style={s.ghostBtn}>
                 <Text style={s.ghostBtnText}>Cancel</Text>
@@ -937,7 +952,9 @@ const s = StyleSheet.create({
   emptyText: { color: T.creamDim, fontSize: 14, textAlign: "center", lineHeight: 22 },
 
   // Flow child, not absolute — see the KeyboardAvoidingView comment above.
-  composeBar: { padding: 12, backgroundColor: T.bg },
+  // flexShrink on both: with the keyboard open a short phone has less room than
+  // the report card's maxHeight, and without it the card ran under the keyboard.
+  composeBar: { padding: 12, backgroundColor: T.bg, flexShrink: 1 },
   composeTap: { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 14 },
   composeTapText: { flex: 1, color: T.creamDim, fontSize: 13 },
   modeChip: { borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 },
@@ -958,7 +975,7 @@ const s = StyleSheet.create({
   postBtnText: { color: T.bg, fontSize: 13, fontWeight: "600" },
   disabled: { opacity: 0.4 },
 
-  reportCard: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 12, maxHeight: 380 },
+  reportCard: { backgroundColor: T.surface, borderWidth: 1, borderColor: T.borderHi, borderRadius: 14, padding: 12, maxHeight: 380, flexShrink: 1 },
   reportHead: { fontSize: 12, color: T.amberHi, fontWeight: "600", marginBottom: 8, letterSpacing: 0.4, textTransform: "uppercase" },
   reportTypes: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
   reportTypeChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
