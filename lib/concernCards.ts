@@ -3,7 +3,9 @@
 // the same way.
 //   concern_cards uses municipality_id (civic-engine schema)
 //   card_watches is the civic-engine watch table
-//   watched_concern_cards is the front-end table for civic_issues watching
+//   watched_concern_cards was the civic ISSUE follow table. That follow was
+//   retired on 2026-10-15 (nothing ever notified on it, and it had no rows);
+//   the app no longer reads or writes it. Do not confuse it with card_watches.
 import { supabase } from "./supabase";
 import { failureOf, writeErrorMessage, WriteFailure } from "./writeError";
 
@@ -50,19 +52,6 @@ type WatchResult = { success: boolean; error: string | null; reason: WriteFailur
 function watchResult(error: any, action: string): WatchResult {
   if (!error || error.code === "23505") return { success: true, error: null, reason: null };
   return { success: false, error: writeErrorMessage(error, action), reason: failureOf(error) };
-}
-
-export async function watchCivicIssue(userId: string, issueId: string): Promise<WatchResult> {
-  const { error } = await supabase.from("watched_concern_cards").insert({
-    user_id: userId, issue_id: issueId, notify_on_move: true,
-  });
-  return watchResult(error, "follow this issue");
-}
-
-export async function unwatchCivicIssue(userId: string, issueId: string): Promise<WatchResult> {
-  const { error } = await supabase.from("watched_concern_cards")
-    .delete().eq("user_id", userId).eq("issue_id", issueId);
-  return watchResult(error, "change what you follow");
 }
 
 export async function watchConcernCard(
