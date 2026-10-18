@@ -241,8 +241,9 @@ export default function OnboardingZKProof() {
             <Text style={s.btnSkipText}>Read without verifying</Text>
           </TouchableOpacity>
           <Text style={s.skipNote}>
-            You can read your neighborhood feed now. Following issues, sharing a
-            stake, and voting need a verified residency — you can do that anytime.
+            You can read your neighborhood feed and follow items now. Voting and
+            sharing a stake need a verified residency, and so do notifications
+            about what you follow. You can verify anytime.
           </Text>
         </>
       )}
