@@ -40,7 +40,11 @@ const PREF_ROWS = [
   // both, not just official responses.
   { key: "round_trip_closed", label: "An official responds, or the record settles a question you asked" },
   { key: "meeting_imminent", label: "A council meeting affecting your neighborhood is within 48 hours" },
-  { key: "watched_item_moved", label: "A civic issue you're following has been updated" },
+  // watched_item_moved is the concern-card follow notification (card_watches),
+  // labelled "Something you follow has moved" in NOTIF_TYPES above. Civic
+  // issues can no longer be followed, so naming them here made this toggle look
+  // safe to turn off when it controls the one follow notification that works.
+  { key: "watched_item_moved", label: "An item you're following has moved" },
 ] as const;
 
 // Trust-tier ladder — mirrored verbatim from web (components/ProfileScreen.jsx
@@ -550,7 +554,7 @@ export default function ProfileScreen() {
                 <Text style={s.roundTripDate}>Official responded {timeAgo(lastRoundTrip.date)}</Text>
               </View>
             ) : (
-              <Text style={s.weekNote}>No closed round trip yet — follow an issue to start one.</Text>
+              <Text style={s.weekNote}>No closed round trip yet — vote on a civic issue to start one.</Text>
             )}
           </View>
 
