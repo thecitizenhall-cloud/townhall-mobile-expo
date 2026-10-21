@@ -10,8 +10,8 @@ web-build/
 *.mobileprovision
 *.orig.*
 web-build/
-.env
-.env.local
+.env*
+!.env.example
 
 # Output that browser-automation tooling writes into the repository root.
 .playwright-mcp/
