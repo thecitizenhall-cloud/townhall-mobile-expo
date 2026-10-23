@@ -76,14 +76,6 @@ function CardAreaMap({ card }: { card: any }) {
   );
 }
 
-function withHighlight(sourceUrl?: string | null, quote?: string | null) {
-  if (!sourceUrl || !quote) return sourceUrl || null;
-  if (sourceUrl.includes("#")) return sourceUrl;
-  if (/\.pdf(\?|$)/i.test(sourceUrl)) return sourceUrl;
-  const snippet = quote.trim().replace(/\s+/g, " ").split(" ").slice(0, 12).join(" ");
-  return `${sourceUrl}#:~:text=${encodeURIComponent(snippet)}`;
-}
-
 export default function ConcernCardDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -403,7 +395,7 @@ export default function ConcernCardDetail() {
           <View style={s.quote}>
             <Text style={s.quoteText}>"{card.source_quote}"</Text>
             {card.source_url ? (
-              <Text style={s.quoteSrc} onPress={() => Linking.openURL(withHighlight(card.source_url, card.source_quote)!)}>
+              <Text style={s.quoteSrc} onPress={() => Linking.openURL(card.source_url)}>
                 View original document ↗
               </Text>
             ) : null}
@@ -483,7 +475,7 @@ export default function ConcernCardDetail() {
                         <Text style={[s.pillSm, { backgroundColor: mo.bg, color: mo.color, borderColor: mo.color }]}>{mo.label}</Text>
                         <Text style={s.meetingType}>{m.meetings?.meeting_type || "Council meeting"}</Text>
                         {m.source_url ? (
-                          <Text style={s.meetingLink} onPress={() => Linking.openURL(withHighlight(m.source_url, card.source_quote)!)}>View agenda ↗</Text>
+                          <Text style={s.meetingLink} onPress={() => Linking.openURL(m.source_url)}>View agenda ↗</Text>
                         ) : null}
                       </View>
                     </View>
