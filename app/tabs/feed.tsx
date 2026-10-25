@@ -244,6 +244,9 @@ export default function FeedScreen() {
         ? Promise.resolve(supabase.from("neighborhoods").select("slug").eq("id", hoodId).maybeSingle())
             .then(({ data: hood }) => hood?.slug ?? null)
         : Promise.resolve(null);
+      // Set as soon as it is known, as before, so a later failure in the
+      // batch does not leave the previous value in place.
+      slugP.then(setNeighborhoodSlug, () => {});
 
       // The council record comes from town_feed, which orders by what the
       // record is DOING (a question answered, then what moved, then what is
@@ -289,7 +292,9 @@ export default function FeedScreen() {
       // Own neighborhood plus the town's general one, where civic-sync posts
       // town-wide items once (web migration 120). Mirrors web TownScreen.loadPosts.
       // Upvote state depends on the fetched posts, so it is chained onto them
-      // rather than waiting for the whole batch.
+      // rather than waiting for the whole batch. A failed upvote read is held
+      // and rethrown after the rest of the feed is applied, as before: the
+      // other sections still update and only the posts are left as they were.
       const postsP = (async () => {
         let postQ = supabase.from("posts")
           .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
@@ -304,12 +309,16 @@ export default function FeedScreen() {
         const postRes = await postQ;
         let withVotes = dedupeSyncedPosts(postRes.data || []);
         if (withVotes.length) {
-          const { data: upvotes } = await supabase.from("post_upvotes")
-            .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
-          const upset = new Set((upvotes || []).map((u: any) => u.post_id));
-          withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
+          try {
+            const { data: upvotes } = await supabase.from("post_upvotes")
+              .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
+            const upset = new Set((upvotes || []).map((u: any) => u.post_id));
+            withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
+          } catch (upvoteErr) {
+            return { withVotes, upvoteErr };
+          }
         }
-        return withVotes;
+        return { withVotes, upvoteErr: null as unknown };
       })();
 
       // Scope to the viewer's own neighborhood so issues (and the welcome
@@ -322,7 +331,7 @@ export default function FeedScreen() {
         ? issuesQ.or(`neighborhood_id.eq.${hoodId},neighborhood_id.is.null`)
         : issuesQ.is("neighborhood_id", null);
 
-      const [hoodSlug, verified, civicItems, council, withVotes, issRes, wcRes] = await Promise.all([
+      const [, verified, civicItems, council, postsOut, issRes, wcRes] = await Promise.all([
         slugP,
         hasResidencyProof(user.id, hoodId),
         civicP,
@@ -332,7 +341,6 @@ export default function FeedScreen() {
         supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
       ]);
 
-      setNeighborhoodSlug(hoodSlug);
       setVerified(verified);
       if (council.error) {
         console.warn("town_feed failed:", council.error);
@@ -347,7 +355,8 @@ export default function FeedScreen() {
       setFeedHasMore(council.hasMore);
       setIssues(issRes.data || []);
       setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
-      setPosts(withVotes);
+      if (postsOut.upvoteErr) throw postsOut.upvoteErr;
+      setPosts(postsOut.withVotes);
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
       console.error("feed load error:", e);
