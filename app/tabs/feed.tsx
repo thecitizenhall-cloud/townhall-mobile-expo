@@ -230,8 +230,9 @@ export default function FeedScreen() {
     setLoadError(null);
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
+      if (!live()) return;
       setCurrentUser(user);
-      if (!user) { setLoading(false); setStreamLoading(false); setRefreshing(false); return; }
+      if (!user) return;  // finally clears the loading flags
 
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       if (!live()) return;
@@ -239,7 +240,7 @@ export default function FeedScreen() {
       setIsFirstSession(!p?.first_session_completed_at || arrival === "1");
       setLoading(false);
       supabase.from("route_watch_roads").select("road_name, road_name_normalized")
-        .eq("user_id", user.id).then(({ data }) => setMyRoads(data || []));
+        .eq("user_id", user.id).then(({ data }) => { if (live()) setMyRoads(data || []); });
 
       // Everything below needs only the profile, so it starts at once and
       // each query waits only on what it uses: the feed waits for its
@@ -347,8 +348,9 @@ export default function FeedScreen() {
       // record and the civic route are applied together because council cards
       // lead the list: showing bulletins first would push them down when the
       // cards arrive. A failure in one section shows the error and leaves the
-      // others to fill in.
-      await Promise.all([
+      // others to fill in. allSettled, not all: the inline spinner must stay
+      // until every section has answered, even when one of them failed.
+      const settled = await Promise.allSettled([
         hasResidencyProof(user.id, hoodId).then((v) => { if (live()) setVerified(v); }),
         Promise.all([councilP, civicP]).then(([council, civicItems]) => {
           if (!live()) return;
@@ -377,6 +379,8 @@ export default function FeedScreen() {
             if (live()) setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
           }),
       ]);
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) throw failed.reason;
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
       console.error("feed load error:", e);
