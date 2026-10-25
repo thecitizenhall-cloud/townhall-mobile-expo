@@ -230,20 +230,23 @@ export default function FeedScreen() {
       supabase.from("route_watch_roads").select("road_name, road_name_normalized")
         .eq("user_id", user.id).then(({ data }) => setMyRoads(data || []));
 
-      // Aggregated civic items from the shared web route (concern cards,
-      // bulletins…). Wrapped so a failed fetch degrades to posts-only without
-      // rejecting the batch below.
+      // Everything below needs only the profile, so it starts at once and
+      // each query waits only on what it uses: the feed waits for its
+      // slowest branch, not the sum of them. Postgrest builders run when
+      // first awaited, so each is wrapped to start now.
+      const hoodId = p?.neighborhood_id ?? null;
+
       // The neighborhood SLUG (text) is the key /api/civic-feed joins
       // neighborhood_scores on AND the value card_watches rows must store (the
       // notifier seeds/queries by it) — profiles holds the uuid, so resolve it
       // once here for both the feed fetch and follow writes.
-      let hoodSlug: string | null = null;
-      if (p?.neighborhood_id) {
-        const { data: hood } = await supabase.from("neighborhoods")
-          .select("slug").eq("id", p.neighborhood_id).maybeSingle();
-        hoodSlug = hood?.slug ?? null;
-      }
-      setNeighborhoodSlug(hoodSlug);
+      const slugP: Promise<string | null> = hoodId
+        ? Promise.resolve(supabase.from("neighborhoods").select("slug").eq("id", hoodId).maybeSingle())
+            .then(({ data: hood }) => hood?.slug ?? null)
+        : Promise.resolve(null);
+      // Set as soon as it is known, as before, so a later failure in the
+      // batch does not leave the previous value in place.
+      slugP.then(setNeighborhoodSlug, () => {});
 
       // The council record comes from town_feed, which orders by what the
       // record is DOING (a question answered, then what moved, then what is
@@ -252,12 +255,15 @@ export default function FeedScreen() {
       // town_feed does not carry — bulletins, agendas, weather — but its own
       // concern-card items are dropped: it ordered them by row insertion time,
       // which stamped a January hearing with the August date it was ingested.
-      const councilPromise = loadTownFeed(hoodSlug, { filter: bandFilter, limit: 20 });
+      const councilP = slugP.then((slug) => loadTownFeed(slug, { filter: bandFilter, limit: 20 }));
 
-      const civicPromise = (async (): Promise<CivicItem[]> => {
+      // Aggregated civic items from the shared web route (concern cards,
+      // bulletins…). Wrapped so a failed fetch degrades to posts-only without
+      // rejecting the batch below.
+      const civicP = slugP.then(async (slug): Promise<CivicItem[]> => {
         try {
           const qs = new URLSearchParams();
-          if (hoodSlug) qs.set("neighborhood_id", hoodSlug);
+          if (slug) qs.set("neighborhood_id", slug);
           const res = await fetch(`${SITE_URL}/api/civic-feed?${qs.toString()}`);
           if (res.ok) {
             const items: CivicItem[] = (await res.json()).items ?? [];
@@ -265,7 +271,7 @@ export default function FeedScreen() {
           }
         } catch { /* degrade to posts-only */ }
         return [];
-      })();
+      });
 
       // Resident posts (with author profile), scoped to the neighborhood.
       //
@@ -283,38 +289,55 @@ export default function FeedScreen() {
       // `.or("removed_at.is.null,author_id.eq.<uid>")`, so an author still sees
       // their own removed post; this hides it from the author too. Minor, but
       // real — don't cite web as the precedent for this line.
-      let postQ = supabase.from("posts")
-        .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
-        .is("removed_at", null)
-        .order("created_at", { ascending: false }).limit(50);
       // Own neighborhood plus the town's general one, where civic-sync posts
       // town-wide items once (web migration 120). Mirrors web TownScreen.loadPosts.
-      if (p?.neighborhood_id) {
-        const generalId = await getGeneralNeighborhoodId(p.neighborhood_id);
-        postQ = generalId && generalId !== p.neighborhood_id
-          ? postQ.in("neighborhood_id", [p.neighborhood_id, generalId])
-          : postQ.eq("neighborhood_id", p.neighborhood_id);
-      }
+      // Upvote state depends on the fetched posts, so it is chained onto them
+      // rather than waiting for the whole batch. A failure in dedupe or the upvote read is held
+      // and rethrown after the rest of the feed is applied, as before: the
+      // other sections still update and only the posts are left as they were.
+      const postsP = (async () => {
+        let postQ = supabase.from("posts")
+          .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
+          .is("removed_at", null)
+          .order("created_at", { ascending: false }).limit(50);
+        if (hoodId) {
+          const generalId = await getGeneralNeighborhoodId(hoodId);
+          postQ = generalId && generalId !== hoodId
+            ? postQ.in("neighborhood_id", [hoodId, generalId])
+            : postQ.eq("neighborhood_id", hoodId);
+        }
+        const postRes = await postQ;
+        let withVotes: any[] = [];
+        try {
+          withVotes = dedupeSyncedPosts(postRes.data || []);
+          if (withVotes.length) {
+            const { data: upvotes } = await supabase.from("post_upvotes")
+              .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
+            const upset = new Set((upvotes || []).map((u: any) => u.post_id));
+            withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
+          }
+        } catch (upvoteErr) {
+          return { withVotes, upvoteErr };
+        }
+        return { withVotes, upvoteErr: null as unknown };
+      })();
 
       // Scope to the viewer's own neighborhood so issues (and the welcome
       // card's "Happening in <neighborhood> now" preview) reflect THEIR town,
       // not any town. Municipality-wide issues (null neighborhood_id) are
       // always included; a resident without a neighborhood sees only those.
       // Mirrors web TownScreen.loadIssues() (commit dd2afd6).
-      const hoodId = p?.neighborhood_id ?? null;
       let issuesQ = supabase.from("civic_issues").select("*").neq("status", "resolved");
       issuesQ = hoodId
         ? issuesQ.or(`neighborhood_id.eq.${hoodId},neighborhood_id.is.null`)
         : issuesQ.is("neighborhood_id", null);
 
-      // ── Everything that needs only `p`/user.id, in parallel ────────────
-      // (verification, civic feed, posts, open issues, card follows) —
-      // previously a long serial chain with issues + watch state stranded last.
-      const [verified, civicItems, council, postRes, issRes, wcRes] = await Promise.all([
-        hasResidencyProof(user.id, p?.neighborhood_id ?? null),
-        civicPromise,
-        councilPromise,
-        postQ,
+      const [, verified, civicItems, council, postsOut, issRes, wcRes] = await Promise.all([
+        slugP,
+        hasResidencyProof(user.id, hoodId),
+        civicP,
+        councilP,
+        postsP,
         issuesQ.order("voice_count", { ascending: false }).limit(20),
         supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
       ]);
@@ -333,16 +356,8 @@ export default function FeedScreen() {
       setFeedHasMore(council.hasMore);
       setIssues(issRes.data || []);
       setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
-
-      // Upvote state depends on the fetched posts, so it follows the batch.
-      let withVotes = dedupeSyncedPosts(postRes.data || []);
-      if (withVotes.length) {
-        const { data: upvotes } = await supabase.from("post_upvotes")
-          .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
-        const upset = new Set((upvotes || []).map((u: any) => u.post_id));
-        withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
-      }
-      setPosts(withVotes);
+      if (postsOut.upvoteErr) throw postsOut.upvoteErr;
+      setPosts(postsOut.withVotes);
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
       console.error("feed load error:", e);
