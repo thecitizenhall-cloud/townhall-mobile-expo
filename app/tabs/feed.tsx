@@ -100,7 +100,14 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState<any[]>([]);
   const [issues, setIssues] = useState<any[]>([]);
   const [civic, setCivic] = useState<CivicItem[]>([]);
+  // `loading` covers only the wait for the profile, which the header needs.
+  // After that the screen shows and each section fills in as its query lands;
+  // `streamLoading` keeps the empty list from saying "quiet" in the meantime.
   const [loading, setLoading] = useState(true);
+  const [streamLoading, setStreamLoading] = useState(true);
+  // Sections now land one by one, so a slow answer from an earlier load must
+  // not overwrite a newer one. Each load takes a number; only the latest writes.
+  const loadGen = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   // The realtime subscription is created once, so it reads the profile
@@ -217,18 +224,23 @@ export default function FeedScreen() {
   }, []);
 
   async function loadFeed(refresh = false) {
-    if (refresh) setRefreshing(true); else setLoading(true);
+    const gen = ++loadGen.current;
+    const live = () => gen === loadGen.current;
+    if (refresh) setRefreshing(true); else { setLoading(true); setStreamLoading(true); }
     setLoadError(null);
     try {
       const user = await getCurrentUser();  // local read; no getUser network round-trip on mount
+      if (!live()) return;
       setCurrentUser(user);
-      if (!user) { setLoading(false); setRefreshing(false); return; }
+      if (!user) return;  // finally clears the loading flags
 
       const { data: p } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+      if (!live()) return;
       setProfile(p);
       setIsFirstSession(!p?.first_session_completed_at || arrival === "1");
+      setLoading(false);
       supabase.from("route_watch_roads").select("road_name, road_name_normalized")
-        .eq("user_id", user.id).then(({ data }) => setMyRoads(data || []));
+        .eq("user_id", user.id).then(({ data }) => { if (live()) setMyRoads(data || []); });
 
       // Everything below needs only the profile, so it starts at once and
       // each query waits only on what it uses: the feed waits for its
@@ -246,7 +258,7 @@ export default function FeedScreen() {
         : Promise.resolve(null);
       // Set as soon as it is known, as before, so a later failure in the
       // batch does not leave the previous value in place.
-      slugP.then(setNeighborhoodSlug, () => {});
+      slugP.then((slug) => { if (live()) setNeighborhoodSlug(slug); }, () => {});
 
       // The council record comes from town_feed, which orders by what the
       // record is DOING (a question answered, then what moved, then what is
@@ -291,10 +303,10 @@ export default function FeedScreen() {
       // real — don't cite web as the precedent for this line.
       // Own neighborhood plus the town's general one, where civic-sync posts
       // town-wide items once (web migration 120). Mirrors web TownScreen.loadPosts.
-      // Upvote state depends on the fetched posts, so it is chained onto them
-      // rather than waiting for the whole batch. A failure in dedupe or the upvote read is held
-      // and rethrown after the rest of the feed is applied, as before: the
-      // other sections still update and only the posts are left as they were.
+      // Upvote state depends on the fetched posts, so it is chained onto them.
+      // A failure in dedupe or the upvote read is returned rather than thrown
+      // here and raised when the posts are applied below: the other sections
+      // still update and only the posts are left as they were.
       const postsP = (async () => {
         let postQ = supabase.from("posts")
           .select("*, profiles(display_name,neighborhood,is_bot,is_official)")
@@ -332,39 +344,53 @@ export default function FeedScreen() {
         ? issuesQ.or(`neighborhood_id.eq.${hoodId},neighborhood_id.is.null`)
         : issuesQ.is("neighborhood_id", null);
 
-      const [, verified, civicItems, council, postsOut, issRes, wcRes] = await Promise.all([
-        slugP,
-        hasResidencyProof(user.id, hoodId),
-        civicP,
-        councilP,
-        postsP,
-        issuesQ.order("voice_count", { ascending: false }).limit(20),
-        supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id),
+      // Each section is applied as soon as its own query lands. The council
+      // record and the civic route are applied together because council cards
+      // lead the list: showing bulletins first would push them down when the
+      // cards arrive. A failure in one section shows the error and leaves the
+      // others to fill in. allSettled, not all: the inline spinner must stay
+      // until every section has answered, even when one of them failed.
+      const settled = await Promise.allSettled([
+        hasResidencyProof(user.id, hoodId).then((v) => { if (live()) setVerified(v); }),
+        Promise.all([councilP, civicP]).then(([council, civicItems]) => {
+          if (!live()) return;
+          if (council.error) {
+            console.warn("town_feed failed:", council.error);
+            setLoadError(RECORD_LOAD_ERROR);
+          }
+          // Council cards first, then whatever the route still supplies. town_feed
+          // already leads with the resident's election district, and every item
+          // carries _inDistrict (townFeed.ts:69), which CivicFeedItem renders as
+          // the badge — so there is no separate district list to hold in state.
+          // Counts come whole from town_feed, never from what has loaded so far.
+          setCivic([...council.items, ...civicItems]);
+          setFeedCounts(council.counts);
+          setFeedHasMore(council.hasMore);
+        }),
+        postsP.then((postsOut) => {
+          if (!live()) return;
+          if (postsOut.upvoteErr) throw postsOut.upvoteErr;
+          setPosts(postsOut.withVotes);
+        }),
+        Promise.resolve(issuesQ.order("voice_count", { ascending: false }).limit(20))
+          .then((issRes) => { if (live()) setIssues(issRes.data || []); }),
+        Promise.resolve(supabase.from("card_watches").select("concern_card_id").eq("user_id", user.id))
+          .then((wcRes) => {
+            if (live()) setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
+          }),
       ]);
-
-      setVerified(verified);
-      if (council.error) {
-        console.warn("town_feed failed:", council.error);
-        setLoadError(RECORD_LOAD_ERROR);
-      }
-      // Council cards first, then whatever the route still supplies. town_feed
-      // already leads with the resident's election district, and every item
-      // carries _inDistrict (townFeed.ts:69), which CivicFeedItem renders as
-      // the badge — so there is no separate district list to hold in state.
-      setCivic([...council.items, ...civicItems]);
-      setFeedCounts(council.counts);
-      setFeedHasMore(council.hasMore);
-      setIssues(issRes.data || []);
-      setWatchedIds(new Set((wcRes.data || []).map((w: any) => w.concern_card_id).filter(Boolean)));
-      if (postsOut.upvoteErr) throw postsOut.upvoteErr;
-      setPosts(postsOut.withVotes);
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) throw failed.reason;
     } catch (e) {
       // A dropped connection must say so, not leave the screen blank/stale.
       console.error("feed load error:", e);
-      setLoadError("Couldn't load your town — pull down to refresh.");
+      if (live()) setLoadError("Couldn't load your town — pull down to refresh.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (live()) {
+        setLoading(false);
+        setStreamLoading(false);
+        setRefreshing(false);
+      }
     }
   }
 
@@ -816,14 +842,16 @@ export default function FeedScreen() {
             </View>
           ) : null
         }
-        ListEmptyComponent={
+        ListEmptyComponent={streamLoading && filter === "all" ? (
+          <View style={s.empty}><ActivityIndicator color={T.amber} /></View>
+        ) : (
           <View style={s.empty}>
             <Text style={s.emptyText}>
               {filter === "all" ? `${neighborhood} is quiet right now.\nBe the first to share something.`
                 : "Nothing here right now."}
             </Text>
           </View>
-        }
+        )}
       />
 
       {/* Compose / report bar */}
