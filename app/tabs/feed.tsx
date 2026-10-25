@@ -292,7 +292,7 @@ export default function FeedScreen() {
       // Own neighborhood plus the town's general one, where civic-sync posts
       // town-wide items once (web migration 120). Mirrors web TownScreen.loadPosts.
       // Upvote state depends on the fetched posts, so it is chained onto them
-      // rather than waiting for the whole batch. A failed upvote read is held
+      // rather than waiting for the whole batch. A failure in dedupe or the upvote read is held
       // and rethrown after the rest of the feed is applied, as before: the
       // other sections still update and only the posts are left as they were.
       const postsP = (async () => {
@@ -307,16 +307,17 @@ export default function FeedScreen() {
             : postQ.eq("neighborhood_id", hoodId);
         }
         const postRes = await postQ;
-        let withVotes = dedupeSyncedPosts(postRes.data || []);
-        if (withVotes.length) {
-          try {
+        let withVotes: any[] = [];
+        try {
+          withVotes = dedupeSyncedPosts(postRes.data || []);
+          if (withVotes.length) {
             const { data: upvotes } = await supabase.from("post_upvotes")
               .select("post_id").eq("user_id", user.id).in("post_id", withVotes.map((pr) => pr.id));
             const upset = new Set((upvotes || []).map((u: any) => u.post_id));
             withVotes = withVotes.map((pr) => ({ ...pr, user_has_upvoted: upset.has(pr.id) }));
-          } catch (upvoteErr) {
-            return { withVotes, upvoteErr };
           }
+        } catch (upvoteErr) {
+          return { withVotes, upvoteErr };
         }
         return { withVotes, upvoteErr: null as unknown };
       })();
