@@ -136,7 +136,13 @@ export default function CivicMapScreen() {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg?.type === "map-probe") setProbe(msg as Probe);
-            else if (msg?.type === "map-ready") setDraw(Number(msg.errors) > 0 ? "gaps" : "ready");
+            else if (msg?.type === "map-ready") {
+              // The latest build drew, so an earlier build's failure (page
+              // error or a probe that found no canvas) no longer applies.
+              setPageError(null);
+              setProbe(null);
+              setDraw(Number(msg.errors) > 0 ? "gaps" : "ready");
+            }
             else if (msg?.type === "map-error") {
               setPageError({ reason: String(msg.reason ?? "unknown"), message: msg.message ? String(msg.message).slice(0, 200) : undefined });
             }
