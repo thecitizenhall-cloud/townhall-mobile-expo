@@ -91,12 +91,6 @@ export default function CivicMapScreen() {
   const [probe, setProbe] = useState<Probe | null>(null);
   const [pageError, setPageError] = useState<PageError | null>(null);
   const [draw, setDraw] = useState<DrawState>("drawing");
-  const [loadStarts, setLoadStarts] = useState(0);
-  useEffect(() => {
-    if (!loadStarts) return;
-    const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
-    return () => clearTimeout(t);
-  }, [loadStarts]);
   const failed = !!pageError || (!!probe && mapFailed(probe));
   // Only the page can say the browser itself is unable to run the map, in
   // which case the system browser on the same phone would fail the same way.
@@ -115,6 +109,15 @@ export default function CivicMapScreen() {
     return `${SITE_URL}/map?${query.toString()}`;
   }, [rawMuni]);
 
+  // A new map load is a new page (uri) or a reload (reloadKey remounts the
+  // WebView). Keyed on those rather than onLoadStart, which can fire again
+  // for the same page and would wipe a result the page already sent.
+  useEffect(() => {
+    setDraw("drawing");
+    const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
+    return () => clearTimeout(t);
+  }, [uri, reloadKey]);
+
   return (
     <View style={s.root}>
       <Stack.Screen options={{ title: town ? `${town} civic map` : "Civic map" }} />
@@ -127,8 +130,6 @@ export default function CivicMapScreen() {
           setError(false);
           setProbe(null);
           setPageError(null);
-          setDraw("drawing");
-          setLoadStarts((n) => n + 1);
         }}
         injectedJavaScriptBeforeContentLoaded={MAP_PROBE}
         onMessage={(event) => {
@@ -174,7 +175,7 @@ export default function CivicMapScreen() {
         </View>
       ) : null}
       {!loading && !error && !failed && draw === "gaps" ? (
-        <View style={s.notice}>
+        <View style={s.notice} accessibilityLiveRegion="polite">
           <Text style={s.statusText}>Some parts of the map didn’t load.</Text>
           <Pressable
             accessibilityRole="button"
