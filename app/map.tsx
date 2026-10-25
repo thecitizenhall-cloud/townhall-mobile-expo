@@ -122,8 +122,13 @@ export default function CivicMapScreen() {
   // WebView) or a rebuild the page announced (drawEpoch). Keyed on those
   // rather than onLoadStart, which can fire again for the same page and
   // would wipe a result the page already sent.
+  // The reset to "drawing" happens here only for a new page or reload;
+  // map-building resets it in its own handler, so a map-ready delivered in
+  // the same batch is not overwritten by this effect running afterwards.
+  useEffect(() => { setDraw("drawing"); }, [uri, reloadKey]);
+  // The timer only ever moves "drawing" to "slow", so a result that landed
+  // first is left alone.
   useEffect(() => {
-    setDraw("drawing");
     const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
     return () => clearTimeout(t);
   }, [uri, reloadKey, drawEpoch]);
@@ -150,6 +155,7 @@ export default function CivicMapScreen() {
               // A new build: the previous build's result no longer applies.
               setPageError(null);
               setProbe(null);
+              setDraw("drawing");
               setDrawEpoch((n) => n + 1);
             }
             else if (msg?.type === "map-ready") {
