@@ -72,6 +72,15 @@ type PageError = { reason: string; message?: string };
 // a map that never reaches idle gives map-building and nothing after it,
 // which is what the fallback timer is for. A message the page re-sends is
 // harmless, since each one only sets the latest state.
+//
+// Seen and left alone (device run, 2026-10-25, Moto E4 on Android 7.1):
+// map-building arrived ~4 s after a filter tap there (~1.25 s on dev
+// hardware). The page's own loading text covered most of that, but there is
+// a short window (~0.2 s, at screenshot resolution) where this screen still
+// shows the previous build's status. After a build with errors > 0 that
+// would be a stale "Some parts of the map didn't load" notice. That case,
+// the errors > 0 path itself and the 50 s fallback have not been exercised
+// on a device; details are on PR #77.
 type DrawState = "drawing" | "slow" | "ready" | "gaps";
 
 // After this long without map-ready, say plainly that it is still drawing.
