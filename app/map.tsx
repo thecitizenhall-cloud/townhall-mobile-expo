@@ -63,9 +63,15 @@ type PageError = { reason: string; message?: string };
 // described as complete. The page sends exactly one of map-error or map-ready
 // per build.
 //
-// Known gap: the page sends no "build started" message, so while a filter
-// change rebuilds the map this screen still shows the previous build as
-// drawn. Showing progress there needs a web-side "map-building" message.
+// On a rebuild the page first posts { type: "map-building" } (web #208),
+// which starts a new drawing state with its own fallback timer. It goes out
+// once the new map is constructed, ~1.25 s after a filter tap, so the
+// previous build's status shows for that long; that is deliberate on the
+// page, which only sends it once a result can follow. Do not assume the
+// messages alternate: two quick filter changes give one map-building, and
+// a map that never reaches idle gives map-building and nothing after it,
+// which is what the fallback timer is for. A message the page re-sends is
+// harmless, since each one only sets the latest state.
 type DrawState = "drawing" | "slow" | "ready" | "gaps";
 
 // After this long without map-ready, say plainly that it is still drawing.
@@ -91,6 +97,9 @@ export default function CivicMapScreen() {
   const [probe, setProbe] = useState<Probe | null>(null);
   const [pageError, setPageError] = useState<PageError | null>(null);
   const [draw, setDraw] = useState<DrawState>("drawing");
+  // Bumped by map-building, so a rebuild gets the same drawing state and
+  // fallback timer as the first load.
+  const [drawEpoch, setDrawEpoch] = useState(0);
   const failed = !!pageError || (!!probe && mapFailed(probe));
   // Only the page can say the browser itself is unable to run the map, in
   // which case the system browser on the same phone would fail the same way.
@@ -109,14 +118,15 @@ export default function CivicMapScreen() {
     return `${SITE_URL}/map?${query.toString()}`;
   }, [rawMuni]);
 
-  // A new map load is a new page (uri) or a reload (reloadKey remounts the
-  // WebView). Keyed on those rather than onLoadStart, which can fire again
-  // for the same page and would wipe a result the page already sent.
+  // A new map load is a new page (uri), a reload (reloadKey remounts the
+  // WebView) or a rebuild the page announced (drawEpoch). Keyed on those
+  // rather than onLoadStart, which can fire again for the same page and
+  // would wipe a result the page already sent.
   useEffect(() => {
     setDraw("drawing");
     const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
     return () => clearTimeout(t);
-  }, [uri, reloadKey]);
+  }, [uri, reloadKey, drawEpoch]);
 
   return (
     <View style={s.root}>
@@ -136,6 +146,12 @@ export default function CivicMapScreen() {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg?.type === "map-probe") setProbe(msg as Probe);
+            else if (msg?.type === "map-building") {
+              // A new build: the previous build's result no longer applies.
+              setPageError(null);
+              setProbe(null);
+              setDrawEpoch((n) => n + 1);
+            }
             else if (msg?.type === "map-ready") {
               // The latest build drew, so an earlier build's failure (page
               // error or a probe that found no canvas) no longer applies.
