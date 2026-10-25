@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { WebView } from "react-native-webview";
@@ -100,6 +100,9 @@ export default function CivicMapScreen() {
   // Bumped by map-building, so a rebuild gets the same drawing state and
   // fallback timer as the first load.
   const [drawEpoch, setDrawEpoch] = useState(0);
+  // When the current drawing state began, so a timer left over from the
+  // previous build cannot call a build slow before its own 50 s are up.
+  const drawStartedAt = useRef(Date.now());
   const failed = !!pageError || (!!probe && mapFailed(probe));
   // Only the page can say the browser itself is unable to run the map, in
   // which case the system browser on the same phone would fail the same way.
@@ -125,11 +128,14 @@ export default function CivicMapScreen() {
   // The reset to "drawing" happens here only for a new page or reload;
   // map-building resets it in its own handler, so a map-ready delivered in
   // the same batch is not overwritten by this effect running afterwards.
-  useEffect(() => { setDraw("drawing"); }, [uri, reloadKey]);
+  useEffect(() => { drawStartedAt.current = Date.now(); setDraw("drawing"); }, [uri, reloadKey]);
   // The timer only ever moves "drawing" to "slow", so a result that landed
   // first is left alone.
   useEffect(() => {
-    const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
+    const t = setTimeout(() => {
+      if (Date.now() - drawStartedAt.current < SLOW_DRAW_MS) return;
+      setDraw((d) => (d === "drawing" ? "slow" : d));
+    }, SLOW_DRAW_MS);
     return () => clearTimeout(t);
   }, [uri, reloadKey, drawEpoch]);
 
@@ -155,6 +161,7 @@ export default function CivicMapScreen() {
               // A new build: the previous build's result no longer applies.
               setPageError(null);
               setProbe(null);
+              drawStartedAt.current = Date.now();
               setDraw("drawing");
               setDrawEpoch((n) => n + 1);
             }
