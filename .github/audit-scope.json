@@ -19,7 +19,7 @@
     { "package": "image-size", "reason": "Reads asset dimensions while Metro bundles, under @expo/metro." },
     { "package": "node-forge", "reason": "Development code-signing certificates in the Expo CLI." },
     { "package": "source-map-js", "reason": "Source maps for PostCSS in the bundler config, under @expo/metro-config." },
-    { "package": "zod", "reason": "Schema validation inside the Expo CLI. The only copy in the lockfile is zod@3.25.76, and its only dependent is @expo/cli (expo > @expo/cli > zod); no file in app/, lib/ or components/ imports it. Not traced: whether any @expo/cli code path validates input from outside the developer machine or build host. No compatible fix exists: the advisory is fixed in >=4.6.6, @expo/cli requires ^3.25.76, so an override to 4.x would break the CLI rather than fix anything, and npm's suggested expo@44 is a downgrade. Do not try either. Recheck on the next Expo SDK upgrade." }
+    { "package": "zod", "reason": "Schema validation inside the Expo CLI. The only copy in the lockfile is zod@3.25.76, and its only dependent is @expo/cli (expo > @expo/cli > zod); no file in app/, lib/ or components/ imports it. Not traced: whether any @expo/cli code path validates input from outside the developer machine or build host. No fixed version is available within @expo/cli's current zod range: the advisory is fixed in >=4.6.6, @expo/cli requires ^3.25.76, so an override to 4.x would break the CLI rather than fix anything, and npm's suggested expo@44 is a downgrade. Do not try either. Recheck on the next Expo SDK upgrade." }
   ],
   "acceptedRisk": [
     {
