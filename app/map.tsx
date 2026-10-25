@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { WebView } from "react-native-webview";
@@ -55,6 +55,26 @@ true;
 // the probe.
 type PageError = { reason: string; message?: string };
 
+// Whether the map has finished drawing, which is later than the page loading.
+// The page posts { type: "map-ready", errors } on the map's first idle after
+// it loads (web #207), once per map build: a filter change rebuilds the map
+// and posts it again, so this simply takes the latest. Idle means "finished
+// trying": errors > 0 means some tiles failed, so that state must never be
+// described as complete. The page sends exactly one of map-error or map-ready
+// per build.
+//
+// Known gap: the page sends no "build started" message, so while a filter
+// change rebuilds the map this screen still shows the previous build as
+// drawn. Showing progress there needs a web-side "map-building" message.
+type DrawState = "drawing" | "slow" | "ready" | "gaps";
+
+// After this long without map-ready, say plainly that it is still drawing.
+// It must be longer than the slowest real draw: map imagery took ~26 s on a
+// 2017 Android 7 phone (Moto E4), so a short timeout would fire before the
+// page answers on exactly the phones this is for. It changes the message
+// only; a map-ready that arrives later still settles the state.
+const SLOW_DRAW_MS = 50_000;
+
 type Probe = { webgl2: boolean; webgl: boolean; canvas: string; tiles: number; errors: string[] };
 
 // Not drawn = no map canvas, or one with no size. Nothing else in the probe
@@ -70,6 +90,13 @@ export default function CivicMapScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [probe, setProbe] = useState<Probe | null>(null);
   const [pageError, setPageError] = useState<PageError | null>(null);
+  const [draw, setDraw] = useState<DrawState>("drawing");
+  const [loadStarts, setLoadStarts] = useState(0);
+  useEffect(() => {
+    if (!loadStarts) return;
+    const t = setTimeout(() => setDraw((d) => (d === "drawing" ? "slow" : d)), SLOW_DRAW_MS);
+    return () => clearTimeout(t);
+  }, [loadStarts]);
   const failed = !!pageError || (!!probe && mapFailed(probe));
   // Only the page can say the browser itself is unable to run the map, in
   // which case the system browser on the same phone would fail the same way.
@@ -100,12 +127,15 @@ export default function CivicMapScreen() {
           setError(false);
           setProbe(null);
           setPageError(null);
+          setDraw("drawing");
+          setLoadStarts((n) => n + 1);
         }}
         injectedJavaScriptBeforeContentLoaded={MAP_PROBE}
         onMessage={(event) => {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg?.type === "map-probe") setProbe(msg as Probe);
+            else if (msg?.type === "map-ready") setDraw(Number(msg.errors) > 0 ? "gaps" : "ready");
             else if (msg?.type === "map-error") {
               setPageError({ reason: String(msg.reason ?? "unknown"), message: msg.message ? String(msg.message).slice(0, 200) : undefined });
             }
@@ -133,6 +163,27 @@ export default function CivicMapScreen() {
         <View style={s.overlay} pointerEvents="none">
           <ActivityIndicator color={T.amber} />
           <Text style={s.statusText}>Loading civic map…</Text>
+        </View>
+      ) : null}
+      {!loading && !error && !failed && (draw === "drawing" || draw === "slow") ? (
+        <View style={s.drawing} pointerEvents="none" accessibilityLiveRegion="polite">
+          <ActivityIndicator color={T.amber} size="small" />
+          <Text style={s.statusText}>
+            {draw === "slow" ? "Still drawing — this is slow on this device." : "Drawing the map…"}
+          </Text>
+        </View>
+      ) : null}
+      {!loading && !error && !failed && draw === "gaps" ? (
+        <View style={s.notice}>
+          <Text style={s.statusText}>Some parts of the map didn’t load.</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reload the civic map"
+            onPress={() => setReloadKey((value) => value + 1)}
+            style={s.retry}
+          >
+            <Text style={s.retryText}>Reload map</Text>
+          </Pressable>
         </View>
       ) : null}
       {failed && !error ? (
@@ -214,6 +265,12 @@ const s = StyleSheet.create({
   notice: {
     position: "absolute", left: 12, right: 12, bottom: 16,
     alignItems: "center", gap: 8, padding: 14, borderRadius: 12,
+    backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
+  },
+  drawing: {
+    position: "absolute", left: 12, right: 12, bottom: 16,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12,
     backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
   },
   diag: { color: T.creamFaint, fontSize: 10, lineHeight: 14, textAlign: "center", marginTop: 4 },
