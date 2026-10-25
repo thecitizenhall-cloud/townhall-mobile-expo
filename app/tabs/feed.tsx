@@ -842,7 +842,7 @@ export default function FeedScreen() {
             </View>
           ) : null
         }
-        ListEmptyComponent={streamLoading && filter === "all" ? (
+        ListEmptyComponent={streamLoading ? (
           <View style={s.empty}><ActivityIndicator color={T.amber} /></View>
         ) : (
           <View style={s.empty}>
