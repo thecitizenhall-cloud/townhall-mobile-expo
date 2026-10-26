@@ -65,6 +65,11 @@ the commit the build reports.
 
 **Listing queries must filter the card, before the limit.** Any query that
 lists concern cards filters on `surfaces_to_feed`, `archived` and `removed_at`.
+One exception: the town record (`lib/cardsHistory.ts`) leaves out
+`surfaces_to_feed`. The record is the accountability ledger, and
+`surfaces_to_feed` promotes a card into the feed (it defaults to false); it
+does not suppress one. Filtering on it hid 1,058 of 1,918 live decisions in
+October 2026. The record still filters `archived` and `removed_at`.
 When the list comes through `neighborhood_scores`, use an inner embed
 (`concern_cards!inner(...)`): a filter on a non-inner embed nulls the card
 instead of dropping the row, and those rows still count against the limit.
