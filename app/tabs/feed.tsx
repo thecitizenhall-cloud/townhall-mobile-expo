@@ -729,15 +729,21 @@ export default function FeedScreen() {
         setRecordHasMore(false);
       })
       .finally(() => { if (gen === recordGen.current) setRecordLoading(false); });
+    // Leaving the record, or changing what it asks for, retires any request
+    // still in flight, including a load-more.
+    return () => { recordGen.current++; };
   }, [filter, townId, recordOutcome, recordImpact, recordReload]);
 
   // Android's back button leaves the record for the feed, as the on-screen
-  // "← Your town today" does, rather than leaving the screen.
-  useEffect(() => {
-    if (filter !== "record") return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => { setFilter("all"); return true; });
-    return () => sub.remove();
-  }, [filter]);
+  // "← Your town today" does, rather than leaving the screen. Only while this
+  // screen is focused: with a card open on top, back must close the card.
+  useFocusEffect(
+    useCallback(() => {
+      if (filter !== "record") return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => { setFilter("all"); return true; });
+      return () => sub.remove();
+    }, [filter])
+  );
 
   async function loadMoreRecords() {
     if (recordLoading || !recordHasMore || !townId) return;
