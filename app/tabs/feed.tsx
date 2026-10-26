@@ -712,7 +712,7 @@ export default function FeedScreen() {
   useEffect(() => {
     if (filter !== "record") return;
     // No town, no record, and not the last town's either.
-    if (!townId) { setRecordItems([]); setRecordHasMore(false); return; }
+    if (!townId) { setRecordItems([]); setRecordHasMore(false); setRecordError(null); return; }
     const gen = ++recordGen.current;
     setRecordLoading(true);
     setRecordError(null);
