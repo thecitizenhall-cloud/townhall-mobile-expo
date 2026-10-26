@@ -710,7 +710,9 @@ export default function FeedScreen() {
   // the feed, so a card archived between taps shifts the window by one instead
   // of skipping a page.
   useEffect(() => {
-    if (filter !== "record" || !townId) return;
+    if (filter !== "record") return;
+    // No town, no record, and not the last town's either.
+    if (!townId) { setRecordItems([]); setRecordHasMore(false); return; }
     const gen = ++recordGen.current;
     setRecordLoading(true);
     setRecordError(null);
@@ -835,7 +837,8 @@ export default function FeedScreen() {
           : <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
         ListHeaderComponent={
           <View>
-            {loadError ? (
+            {/* The feed's own error; the record shows its own below. */}
+            {loadError && filter === "all" ? (
               <View style={s.loadErr}><Text style={s.loadErrText}>{loadError}</Text></View>
             ) : null}
             {profile?.neighborhood && (
