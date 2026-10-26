@@ -788,11 +788,6 @@ export default function FeedScreen() {
     }
   }
 
-  const filterTabs = [
-    { key: "all", label: "All", show: true },
-    { key: "map", label: "🗺 Map", show: true },
-    { key: "budget", label: "💰 Budget", show: true },
-  ].filter((t) => t.show);
 
   function openCivic(c: CivicItem) {
     if (c.concern_card_id) router.push({ pathname: "/card/[id]", params: { id: c.concern_card_id } });
@@ -913,11 +908,26 @@ export default function FeedScreen() {
                 only; not on the first-session arrival, which has its own frame. */}
             {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
 
-            {/* The way into the whole record, as web's briefing ends with it. */}
+            {/* "Explore your town", as web's briefing ends (TownBriefing.jsx).
+                Map and Budget each open another screen, so they are buttons,
+                not tabs: the old tab row dressed them as filters that act in
+                place, and with Bulletins gone its only real filter was All. */}
             {filter === "all" && (
-              <Pressable onPress={() => setFilter("record")} accessibilityRole="button" style={s.recordLink}>
-                <Text style={s.recordLinkText}>Browse the complete town record →</Text>
-              </Pressable>
+              <View style={s.explore} accessibilityLabel="Explore your town">
+                <Pressable onPress={() => setFilter("record")} accessibilityRole="button" style={s.recordLink}>
+                  <Text style={s.recordLinkText}>Browse the complete town record →</Text>
+                </Pressable>
+                <View style={s.exploreTools}>
+                  <Pressable onPress={() => router.push({ pathname: "/map" as any, params: townId ? { muni: townId } : {} })}
+                    accessibilityRole="button" accessibilityLabel={`Open ${neighborhood} civic map`} style={s.exploreTool}>
+                    <Text style={s.exploreToolText}>🗺 Map</Text>
+                  </Pressable>
+                  <Pressable onPress={() => router.push("/tabs/budget" as any /* typed routes regen on next expo start */)}
+                    accessibilityRole="button" accessibilityLabel="Open the town budget" style={s.exploreTool}>
+                    <Text style={s.exploreToolText}>💰 Budget</Text>
+                  </Pressable>
+                </View>
+              </View>
             )}
 
             {filter === "record" && (
@@ -964,23 +974,6 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {/* Filter tabs */}
-            {filter === "all" && filterTabs.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
-                {filterTabs.map((t) => (
-                  <Pressable key={t.key} onPress={() => t.key === "map"
-                    ? router.push({ pathname: "/map" as any, params: townId ? { muni: townId } : {} })
-                    : t.key === "budget"
-                      ? router.push("/tabs/budget" as any /* typed routes regen on next expo start */)
-                      : setFilter(t.key as any)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t.key === "map" ? `Open ${neighborhood} civic map` : undefined}
-                    style={[s.filterPill, filter === t.key && s.filterPillActive]}>
-                    <Text style={[s.filterPillText, filter === t.key && s.filterPillTextActive]}>{t.label}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            )}
           </View>
         }
         renderItem={({ item }) => {
@@ -1180,13 +1173,14 @@ const s = StyleSheet.create({
   followBtnText: { fontSize: 11, fontWeight: "500" },
   firstTimeFoot: { fontSize: 11, color: T.creamFaint, marginTop: 8, textAlign: "center" },
 
-  filterRow: { borderBottomWidth: 1, borderBottomColor: T.border, paddingHorizontal: 12 },
   filterPill: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  filterPillActive: { borderBottomColor: T.amber },
   filterPillText: { fontSize: 12, color: T.creamFaint },
-  filterPillTextActive: { color: T.cream },
 
-  recordLink: { marginHorizontal: 16, marginTop: 4, marginBottom: 8, paddingVertical: 10 },
+  explore: { paddingHorizontal: 16, paddingBottom: 12, gap: 8, borderBottomWidth: 1, borderBottomColor: T.border },
+  exploreTools: { flexDirection: "row", gap: 8 },
+  exploreTool: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: T.borderHi, backgroundColor: T.surface },
+  exploreToolText: { color: T.cream, fontSize: 13 },
+  recordLink: { paddingVertical: 10 },
   recordLinkText: { color: T.amberHi, fontSize: 13, fontWeight: "500" },
   recordHead: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8, borderBottomWidth: 1, borderBottomColor: T.border },
   recordBack: { color: T.amberHi, fontSize: 13, paddingVertical: 4 },
