@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator,
-  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Keyboard,
+  TouchableOpacity, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView, Keyboard, BackHandler,
 } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -11,6 +11,7 @@ import { isStandingRefusal, writeErrorMessage } from "../../lib/writeError";
 import { watchConcernCard, unwatchConcernCard, FOLLOW_NO_NOTIFY_NOTE, FOLLOW_NOTIFY_UNKNOWN_NOTE } from "../../lib/concernCards";
 import { municipalityForNeighborhood, municipalityForSlug } from "../../lib/townOf";
 import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/townFeed";
+import { loadCardsHistory, RecordOutcome, RecordImpact } from "../../lib/cardsHistory";
 
 // Shown when town_feed itself fails. Without it an empty result from a failed
 // call reads as a quiet town.
@@ -19,6 +20,26 @@ import { loadTownFeed, EMPTY_COUNTS, FeedCounts, FeedFilter } from "../../lib/to
 const REPORT_NO_TOWN = "We couldn't tell which town this report belongs to, so it wasn't sent. What you wrote is still here. Please try again later, or email hello@townhallcafe.org.";
 
 const RECORD_LOAD_ERROR = "Couldn't load the town record — pull down to refresh.";
+
+// The Record view's filters, as on web's RecordControls. The outcome chips use
+// the words the feed's own cards print (lib/townFeed.ts outcomeLabel), so a
+// chip and the card it selects say the same thing. Topics are the five
+// impact_type values the engine writes.
+const RECORD_OUTCOMES: { key: RecordOutcome; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "approved", label: "Approved" },
+  { key: "denied", label: "Not approved" },
+  { key: "deferred", label: "Deferred" },
+  { key: "pending", label: "Decision pending" },
+];
+const RECORD_IMPACTS: { key: RecordImpact; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "zoning", label: "Zoning" },
+  { key: "budget", label: "Budget" },
+  { key: "infrastructure", label: "Infrastructure" },
+  { key: "education", label: "Education" },
+  { key: "other", label: "Other" },
+];
 import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNeighborhood";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
@@ -130,7 +151,21 @@ export default function FeedScreen() {
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [watchLoading, setWatchLoading] = useState<string | null>(null);
   const [myRoads, setMyRoads] = useState<{ road_name: string; road_name_normalized: string }[]>([]);
-  const [filter, setFilter] = useState<"all" | "bulletin">("all");
+  // "all" is the feed; "record" is the whole town record, as on web. The
+  // Bulletins tab is gone, as it is on web: bulletins already appear in All,
+  // so the tab only hid everything else.
+  const [filter, setFilter] = useState<"all" | "record">("all");
+  const [recordItems, setRecordItems] = useState<CivicItem[]>([]);
+  const [recordOutcome, setRecordOutcome] = useState<RecordOutcome>("all");
+  const [recordImpact, setRecordImpact] = useState<RecordImpact>("all");
+  const [recordHasMore, setRecordHasMore] = useState(false);
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const [recordReload, setRecordReload] = useState(0);
+  // Changing a filter while a page is loading must not let the old answer
+  // land on top of the new one. Each first-page load takes a number; a
+  // response only applies if its number is still the latest.
+  const recordGen = useRef(0);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [slugTown, setSlugTown] = useState<string | null>(null);
   useEffect(() => {
@@ -623,8 +658,8 @@ export default function FeedScreen() {
       ...concernCards.map((c) => ({ type: "civic" as const, data: c })),
       ...others,
     ];
-  } else if (filter === "bulletin") {
-    streamItems = civic.filter((c) => c.source === "township_news" || c.tag === "bulletin").map((c) => ({ type: "civic" as const, data: c }));
+  } else {
+    streamItems = recordItems.map((c) => ({ type: "civic" as const, data: c }));
   }
 
   if (myRoads.length) {
@@ -667,10 +702,75 @@ export default function FeedScreen() {
     }
   }
 
+  // The Record view's first page: on opening it, on a filter change, and on
+  // pull-to-refresh. Offset for later pages is the count already held, as for
+  // the feed, so a card archived between taps shifts the window by one instead
+  // of skipping a page.
+  useEffect(() => {
+    if (filter !== "record" || !townId) return;
+    const gen = ++recordGen.current;
+    setRecordLoading(true);
+    setRecordError(null);
+    setRecordItems([]);
+    loadCardsHistory(townId, { outcome: recordOutcome, impact: recordImpact })
+      .then((res) => {
+        if (gen !== recordGen.current) return;
+        if (res.error) {
+          console.warn("town record failed:", res.error);
+          setRecordError("Couldn't load the town record. Pull down to try again.");
+        }
+        setRecordItems(res.items);
+        setRecordHasMore(res.hasMore);
+      })
+      .catch((e) => {
+        if (gen !== recordGen.current) return;
+        console.warn("town record failed:", e);
+        setRecordError("Couldn't load the town record. Pull down to try again.");
+        setRecordHasMore(false);
+      })
+      .finally(() => { if (gen === recordGen.current) setRecordLoading(false); });
+  }, [filter, townId, recordOutcome, recordImpact, recordReload]);
+
+  // Android's back button leaves the record for the feed, as the on-screen
+  // "← Your town today" does, rather than leaving the screen.
+  useEffect(() => {
+    if (filter !== "record") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => { setFilter("all"); return true; });
+    return () => sub.remove();
+  }, [filter]);
+
+  async function loadMoreRecords() {
+    if (recordLoading || !recordHasMore || !townId) return;
+    const gen = recordGen.current;
+    setRecordLoading(true);
+    try {
+      const more = await loadCardsHistory(townId, {
+        outcome: recordOutcome, impact: recordImpact, offset: recordItems.length,
+      });
+      if (gen !== recordGen.current) return;
+      // Leave hasMore alone so scrolling again can retry.
+      if (more.error) {
+        console.warn("town record failed:", more.error);
+        setRecordError("Couldn't load more of the town record. Scroll down to try again.");
+        return;
+      }
+      setRecordError(null);
+      const have = new Set(recordItems.map((c) => c.external_id));
+      setRecordItems((prev) => [...prev, ...more.items.filter((c) => !have.has(c.external_id))]);
+      setRecordHasMore(more.hasMore);
+    } catch (e) {
+      if (gen === recordGen.current) {
+        console.warn("town record failed:", e);
+        setRecordError("Couldn't load more of the town record. Scroll down to try again.");
+      }
+    } finally {
+      if (gen === recordGen.current) setRecordLoading(false);
+    }
+  }
+
   const filterTabs = [
     { key: "all", label: "All", show: true },
     { key: "map", label: "🗺 Map", show: true },
-    { key: "bulletin", label: "Bulletins", show: civic.some((c) => c.source === "township_news") },
     { key: "budget", label: "💰 Budget", show: true },
   ].filter((t) => t.show);
 
@@ -712,7 +812,9 @@ export default function FeedScreen() {
         keyExtractor={(item, i) => (item.type === "civic"
           ? `civic-${item.data.external_id ?? item.data.concern_card_id ?? i}`
           : `post-${item.data.id ?? i}`)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
+        refreshControl={filter === "record"
+          ? <RefreshControl refreshing={false} onRefresh={() => setRecordReload((n) => n + 1)} tintColor={T.amber} />
+          : <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.amber} />}
         ListHeaderComponent={
           <View>
             {loadError ? (
@@ -744,7 +846,7 @@ export default function FeedScreen() {
             )}
 
             {/* First-five-minutes — a designed arrival, not a flag flipped. */}
-            {isFirstSession && (concernCards.length > 0 || issues.length > 0) && (
+            {filter === "all" && isFirstSession && (concernCards.length > 0 || issues.length > 0) && (
               <View style={s.firstTime}>
                 <Text style={s.firstTimeTitle}>Happening in <Text style={s.firstTimeTitleEm}>{neighborhood}</Text> now</Text>
                 <Text style={s.firstTimeSub}>
@@ -790,8 +892,59 @@ export default function FeedScreen() {
                 only; not on the first-session arrival, which has its own frame. */}
             {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
 
+            {/* The way into the whole record, as web's briefing ends with it. */}
+            {filter === "all" && (
+              <Pressable onPress={() => setFilter("record")} accessibilityRole="button" style={s.recordLink}>
+                <Text style={s.recordLinkText}>Browse the complete town record →</Text>
+              </Pressable>
+            )}
+
+            {filter === "record" && (
+              <View style={s.recordHead}>
+                <Pressable onPress={() => setFilter("all")} accessibilityRole="button" hitSlop={8}>
+                  <Text style={s.recordBack}>← Your town today</Text>
+                </Pressable>
+                <Text style={s.recordTitle} accessibilityRole="header">Town record</Text>
+                <Text style={s.recordSub}>
+                  The full record of every civic decision in this town — an accountability ledger, not the active feed.
+                </Text>
+                {/* The record answers "what did they decide?", so it filters by
+                    the record's outcome. Labelled, as on web, so the two rows
+                    read as two questions. */}
+                <Text style={s.recordGroupLabel}>By outcome</Text>
+                <View style={s.recordChips} accessibilityRole="radiogroup" accessibilityLabel="By outcome">
+                  {RECORD_OUTCOMES.map((c) => {
+                    const on = recordOutcome === c.key;
+                    return (
+                      <Pressable key={c.key} onPress={() => setRecordOutcome(c.key)}
+                        accessibilityRole="radio" accessibilityState={{ selected: on }}
+                        style={[s.recordChip, on && s.recordChipOn]}>
+                        <Text style={[s.recordChipText, on && s.recordChipTextOn]}>{c.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={s.recordGroupLabel}>By topic</Text>
+                <View style={s.recordChips} accessibilityRole="radiogroup" accessibilityLabel="By topic">
+                  {RECORD_IMPACTS.map((c) => {
+                    const on = recordImpact === c.key;
+                    return (
+                      <Pressable key={c.key} onPress={() => setRecordImpact(c.key)}
+                        accessibilityRole="radio" accessibilityState={{ selected: on }}
+                        style={[s.recordChip, on && s.recordChipOn]}>
+                        <Text style={[s.recordChipText, on && s.recordChipTextOn]}>{c.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {recordError ? (
+                  <View style={[s.loadErr, { marginHorizontal: 0 }]}><Text style={s.loadErrText}>{recordError}</Text></View>
+                ) : null}
+              </View>
+            )}
+
             {/* Filter tabs */}
-            {filterTabs.length > 1 && (
+            {filter === "all" && filterTabs.length > 1 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow} contentContainerStyle={{ gap: 4 }}>
                 {filterTabs.map((t) => (
                   <Pressable key={t.key} onPress={() => t.key === "map"
@@ -824,9 +977,28 @@ export default function FeedScreen() {
           );
         }}
         onEndReachedThreshold={0.6}
-        onEndReached={() => { if (filter === "all" && feedHasMore) loadMoreFeed(); }}
+        onEndReached={() => {
+          if (filter === "all" && feedHasMore) loadMoreFeed();
+          else if (filter === "record" && recordHasMore) loadMoreRecords();
+        }}
         ListFooterComponent={
-          filter === "all" && concernCards.length > 0 ? (
+          filter === "record" ? (
+            recordItems.length > 0 ? (
+              <View style={{ paddingVertical: 18, alignItems: "center" }}>
+                {recordLoading ? (
+                  <ActivityIndicator color={T.amber} />
+                ) : recordHasMore ? (
+                  <Pressable onPress={loadMoreRecords} style={s.filterPill} accessibilityRole="button">
+                    <Text style={s.filterPillText}>Load more</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={{ color: T.creamFaint, fontSize: 11 }}>
+                    End of the record · {recordItems.length} decisions
+                  </Text>
+                )}
+              </View>
+            ) : null
+          ) : filter === "all" && concernCards.length > 0 ? (
             <View style={{ paddingVertical: 18, alignItems: "center" }}>
               {bandLoading ? (
                 <ActivityIndicator color={T.amber} />
@@ -842,13 +1014,15 @@ export default function FeedScreen() {
             </View>
           ) : null
         }
-        ListEmptyComponent={streamLoading ? (
+        ListEmptyComponent={(filter === "record" ? recordLoading : streamLoading) ? (
           <View style={s.empty}><ActivityIndicator color={T.amber} /></View>
         ) : (
           <View style={s.empty}>
             <Text style={s.emptyText}>
               {filter === "all" ? `${neighborhood} is quiet right now.\nBe the first to share something.`
-                : "Nothing here right now."}
+                : !townId ? "We couldn't tell which town's record to show."
+                : recordError ? ""
+                : "Nothing on the record matches these filters."}
             </Text>
           </View>
         )}
@@ -990,6 +1164,19 @@ const s = StyleSheet.create({
   filterPillActive: { borderBottomColor: T.amber },
   filterPillText: { fontSize: 12, color: T.creamFaint },
   filterPillTextActive: { color: T.cream },
+
+  recordLink: { marginHorizontal: 16, marginTop: 4, marginBottom: 8, paddingVertical: 10 },
+  recordLinkText: { color: T.amberHi, fontSize: 13, fontWeight: "500" },
+  recordHead: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, gap: 8, borderBottomWidth: 1, borderBottomColor: T.border },
+  recordBack: { color: T.amberHi, fontSize: 13, paddingVertical: 4 },
+  recordTitle: { color: T.cream, fontSize: 18, fontWeight: "600" },
+  recordSub: { color: T.creamDim, fontSize: 12, lineHeight: 19 },
+  recordGroupLabel: { color: T.creamFaint, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: -2 },
+  recordChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  recordChip: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 99, borderWidth: 1, borderColor: T.border },
+  recordChipOn: { backgroundColor: T.amberLo, borderColor: T.amberMid },
+  recordChipText: { fontSize: 12, color: T.creamDim },
+  recordChipTextOn: { color: T.amberHi },
 
   empty: { padding: 40, alignItems: "center" },
   emptyText: { color: T.creamDim, fontSize: 14, textAlign: "center", lineHeight: 22 },
