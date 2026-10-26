@@ -166,6 +166,9 @@ export default function FeedScreen() {
   // land on top of the new one. Each first-page load takes a number; a
   // response only applies if its number is still the latest.
   const recordGen = useRef(0);
+  // A ref, not the loading state: onEndReached can fire twice before React
+  // re-renders, and two requests for the same page would append it twice.
+  const recordMoreInFlight = useRef(false);
   const [neighborhoodSlug, setNeighborhoodSlug] = useState<string | null>(null);
   const [slugTown, setSlugTown] = useState<string | null>(null);
   useEffect(() => {
@@ -730,8 +733,13 @@ export default function FeedScreen() {
       })
       .finally(() => { if (gen === recordGen.current) setRecordLoading(false); });
     // Leaving the record, or changing what it asks for, retires any request
-    // still in flight, including a load-more.
-    return () => { recordGen.current++; };
+    // still in flight, including a load-more. The retired request can no
+    // longer clear the spinner, so this does.
+    return () => {
+      recordGen.current++;
+      recordMoreInFlight.current = false;
+      setRecordLoading(false);
+    };
   }, [filter, townId, recordOutcome, recordImpact, recordReload]);
 
   // Android's back button leaves the record for the feed, as the on-screen
@@ -746,8 +754,9 @@ export default function FeedScreen() {
   );
 
   async function loadMoreRecords() {
-    if (recordLoading || !recordHasMore || !townId) return;
+    if (recordLoading || recordMoreInFlight.current || !recordHasMore || !townId) return;
     const gen = recordGen.current;
+    recordMoreInFlight.current = true;
     setRecordLoading(true);
     try {
       const more = await loadCardsHistory(townId, {
@@ -770,7 +779,10 @@ export default function FeedScreen() {
         setRecordError("Couldn't load more of the town record. Scroll down to try again.");
       }
     } finally {
-      if (gen === recordGen.current) setRecordLoading(false);
+      if (gen === recordGen.current) {
+        recordMoreInFlight.current = false;
+        setRecordLoading(false);
+      }
     }
   }
 

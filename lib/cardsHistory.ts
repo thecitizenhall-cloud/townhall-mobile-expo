@@ -11,9 +11,13 @@ import { cardToCivicItem } from "./townFeed";
 // - Web keeps a fallback for databases without concern_cards.town_id
 //   (migration 060). Production has it on every card, so mobile reads town_id
 //   directly.
-// - This filters surfaces_to_feed and removed_at as well as archived, per the
-//   listing rule in AGENTS.md. surfaces_to_feed is the card's visibility flag;
-//   about half of live cards have it off, and web's Record shows them anyway.
+// - This also filters removed_at, as AGENTS.md asks of every card listing.
+//
+// It deliberately does NOT filter surfaces_to_feed, which AGENTS.md also asks
+// for. That flag decides what the ranked FEED shows. In October 2026 it was off
+// for 1,058 of 1,918 live cards, and those are real decisions (variances,
+// ordinances, continued hearings). A view offered as the complete record that
+// silently dropped half of it would be wrong, and web's Record shows them too.
 //
 // id breaks ties in the order, so a page boundary between two cards from the
 // same meeting cannot repeat or drop one.
@@ -30,7 +34,6 @@ export async function loadCardsHistory(
   if (!townId) return { items: [], hasMore: false, error: null };
   let q = supabase.from("concern_cards").select("*")
     .eq("archived", false)
-    .eq("surfaces_to_feed", true)
     .is("removed_at", null)
     .eq("town_id", townId);
   if (outcome !== "all") q = q.eq("outcome_signal", outcome);
