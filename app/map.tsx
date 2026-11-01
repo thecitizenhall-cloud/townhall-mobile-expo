@@ -5,6 +5,7 @@ import { WebView } from "react-native-webview";
 import { muniLabel } from "../lib/cardArea";
 import { SITE_URL } from "../lib/config";
 import { T } from "../lib/theme";
+import { WEB_DARK_JS } from "../lib/webDark";
 
 // The page can load while the map on it stays blank. From the app that looked
 // like a working header over an empty screen with no way to tell why. The page
@@ -161,7 +162,8 @@ export default function CivicMapScreen() {
           setProbe(null);
           setPageError(null);
         }}
-        injectedJavaScriptBeforeContentLoaded={MAP_PROBE}
+        injectedJavaScriptBeforeContentLoaded={WEB_DARK_JS + MAP_PROBE}
+        injectedJavaScript={WEB_DARK_JS}
         onMessage={(event) => {
           try {
             const msg = JSON.parse(event.nativeEvent.data);
