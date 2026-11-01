@@ -47,6 +47,7 @@ import CivicPulse from "../../components/CivicPulse";
 import { T } from "../../lib/theme";
 import { SITE_URL } from "../../lib/config";
 import { WebView } from "react-native-webview";
+import { WEB_DARK_JS } from "../../lib/webDark";
 import CivicFeedItem from "../../components/CivicFeedItem";
 import PostCard from "../../components/PostCard";
 
@@ -1111,6 +1112,8 @@ export default function FeedScreen() {
                 ref={reportMapRef}
                 source={{ uri: `${SITE_URL}/map-picker?native=1` }}
                 style={s.map}
+                injectedJavaScriptBeforeContentLoaded={WEB_DARK_JS}
+                injectedJavaScript={WEB_DARK_JS}
                 onMessage={(e) => {
                   try {
                     const m = JSON.parse(e.nativeEvent.data);
