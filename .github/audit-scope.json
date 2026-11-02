@@ -10,7 +10,7 @@
     { "package": "babel-preset-expo", "reason": "Compile-time Babel preset." },
     { "package": "@babel/core", "reason": "The Babel compiler. Transforms source at bundle time; not shipped." },
     { "package": "@expo/config", "reason": "Reads and evaluates app.json / app.config for the CLI, prebuild and the bundler config. Checked 2026-11-01: no runtime file in expo, expo-router, expo-constants or expo-modules-core imports it, and none of its error messages are in the shipped Hermes bundle (EAS build e1529a8a)." },
-    { "package": "@expo/fingerprint", "reason": "Hashes the native project to decide whether a new native build is needed. CLI and build host only. Checked 2026-11-01: not imported by any runtime file, and none of its error messages are in the shipped Hermes bundle (EAS build e1529a8a)." },
+    { "package": "@expo/fingerprint", "reason": "Hashes the native project to decide whether a new native build is needed. CLI and build host only. Checked 2026-11-01: no runtime file in expo, expo-router, expo-constants or expo-modules-core imports it, and none of its error messages are in the shipped Hermes bundle (EAS build e1529a8a)." },
     { "package": "@babel/helper-compilation-targets", "reason": "Babel helper that works out compile targets. Reached through the Babel plugins that react-native-worklets lists as dependencies; those plugins run inside the compiler, not in the app." }
   ],
   "buildTimeOnly": [
