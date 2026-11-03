@@ -905,12 +905,10 @@ export default function FeedScreen() {
               </View>
             )}
 
-            {/* The Pulse — the feed's opening "feel" (web parity). Main feed
-                only; not on the first-session arrival, which has its own frame. */}
-            {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
-
-            {/* "Explore your town", as web's briefing ends (TownBriefing.jsx).
-                Map and Budget each open another screen, so they are buttons,
+            {/* "Explore your town" (web's TownBriefing.jsx ends with it). It
+                comes BEFORE the Pulse here: below it, on a 720p phone the
+                Map and Budget buttons sat half under the bottom edge. Map
+                and Budget each open another screen, so they are buttons,
                 not tabs: the old tab row dressed them as filters that act in
                 place, and with Bulletins gone its only real filter was All. */}
             {filter === "all" && (
@@ -930,6 +928,10 @@ export default function FeedScreen() {
                 </View>
               </View>
             )}
+
+            {/* The Pulse — the feed's opening "feel" (web parity). Main feed
+                only; not on the first-session arrival, which has its own frame. */}
+            {filter === "all" && !isFirstSession && <CivicPulse townId={townId} />}
 
             {filter === "record" && (
               <View style={s.recordHead}>
