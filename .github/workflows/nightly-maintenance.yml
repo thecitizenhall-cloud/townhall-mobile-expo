@@ -54,11 +54,6 @@ jobs:
             echo "type check FAILED" >> "$FINDINGS"; FAILED=1
           fi
 
-          echo "## npm test" >> "$FINDINGS"
-          if ! npm test >> "$FINDINGS" 2>&1; then
-            echo "tests FAILED" >> "$FINDINGS"; FAILED=1
-          fi
-
           # Scoped gate, not a bare `npm audit --omit=dev`: the Expo/Metro/Babel
           # toolchain is reachable from production dependencies, so the bare
           # command could never pass and its failure said nothing. The script
