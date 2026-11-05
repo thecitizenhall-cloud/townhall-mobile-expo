@@ -6,7 +6,7 @@ import { WebView } from "react-native-webview";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { attestationStatement, recordAttestation } from "../../lib/attestation";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { WEB_DARK_JS } from "../../lib/webDark";
 
 // The ZK proof is generated in a WebView using the same snarkjs + WASM artifacts
@@ -40,6 +40,8 @@ async function seedWatchers(neighborhoodId: string, accessToken: string | undefi
 }
 
 export default function OnboardingZKProof() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const params = useLocalSearchParams<{
     neighborhoodId: string;
     neighborhoodName: string;
@@ -253,7 +255,7 @@ export default function OnboardingZKProof() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, padding: 28, paddingTop: 32, backgroundColor: T.bg },
   title: { color: T.cream, fontSize: 24, fontWeight: "600", marginBottom: 10 },
   sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 28 },

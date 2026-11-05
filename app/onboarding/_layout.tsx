@@ -1,7 +1,8 @@
 import { Stack } from "expo-router";
-import { T } from "../../lib/theme";
+import { useTheme } from "../../lib/themeContext";
 
 export default function OnboardingLayout() {
+  const T = useTheme();
   return (
     <Stack
       screenOptions={{

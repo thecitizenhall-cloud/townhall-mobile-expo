@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { WebView } from "react-native-webview";
 import { muniLabel } from "../lib/cardArea";
 import { SITE_URL } from "../lib/config";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 import { WEB_DARK_JS } from "../lib/webDark";
 
 // The page can load while the map on it stays blank. From the app that looked
@@ -100,6 +100,8 @@ function mapFailed(p: Probe): boolean {
 }
 
 export default function CivicMapScreen() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const params = useLocalSearchParams<{ muni?: string | string[] }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -298,7 +300,7 @@ export default function CivicMapScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   webView: { flex: 1, backgroundColor: T.bg },
   overlay: {

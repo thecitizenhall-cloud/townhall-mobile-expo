@@ -8,7 +8,7 @@ import { useLocalSearchParams, router, Stack } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { getResidencyProof, validateProof } from "../../lib/residency";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, byMode, type Palette } from "../../lib/themeContext";
 import { SITE_URL } from "../../lib/config";
 import { timeAgo, daysSince, dayLabel, initials, simpleHash, nextCouncilMeeting } from "../../lib/format";
 import CommentKit, { KitComment, Stance, normalizeStance } from "../../components/CommentKit";
@@ -28,17 +28,19 @@ import CoalitionBar from "../../components/CoalitionBar";
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 
-const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+const STATUS_COLORS = (T: Palette): Record<string, { bg: string; color: string; label: string }> => ({
   open: { bg: T.blueLo, color: T.blueHi, label: "Open" },
   escalated: { bg: T.amberLo, color: T.amberHi, label: "Escalated" },
   expert: { bg: T.purpleLo, color: T.purpleHi, label: "Expert review" },
   city_wide: { bg: T.tealLo, color: T.tealHi, label: "City-wide" },
-  resolved: { bg: "#1A2A1A", color: T.tealHi, label: "Resolved" },
-};
+  resolved: { bg: byMode(T, "#1A2A1A", T.tealLo), color: T.tealHi, label: "Resolved" },
+});
 
 const getToken = async () => (await supabase.auth.getSession()).data.session?.access_token ?? null;
 
 export default function IssueDetail() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const { id: issueId } = useLocalSearchParams<{ id: string }>();
 
   const [issue, setIssue] = useState<any>(null);
@@ -564,7 +566,7 @@ export default function IssueDetail() {
   }
   if (!issue) return null;
 
-  const statusStyle = STATUS_COLORS[issue.status] || STATUS_COLORS.open;
+  const statusStyle = STATUS_COLORS(T)[issue.status] || STATUS_COLORS(T).open;
   const description = issue.description ?? issue.body;
 
   // Shared CommentKit shape: replies (carry stance + sub-issue) + standalone stakes.
@@ -1079,7 +1081,7 @@ export default function IssueDetail() {
           <View style={{ marginTop: 8 }}>
             <Text style={[s.kicker, { marginBottom: 8 }]}>Related civic items</Text>
             {relatedIssues.map((r) => {
-              const st = STATUS_COLORS[r.status] || STATUS_COLORS.open;
+              const st = STATUS_COLORS(T)[r.status] || STATUS_COLORS(T).open;
               return (
                 <Pressable key={r.id} style={s.relatedItem} onPress={() => router.push({ pathname: "/issue/[id]", params: { id: r.id } })}>
                   <Text style={s.relatedTitle} numberOfLines={2}>{r.title}</Text>
@@ -1146,7 +1148,7 @@ export default function IssueDetail() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   loadErr: { marginBottom: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
   loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },

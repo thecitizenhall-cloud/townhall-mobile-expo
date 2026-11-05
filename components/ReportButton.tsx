@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { supabase } from "../lib/supabase";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 
 type ContentType = "post" | "issue_reply" | "card_event" | "concern_card" | "civic_issue";
 
@@ -27,6 +27,8 @@ export default function ReportButton({
   contentId: string;
   currentUserId?: string | null;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const [reported, setReported] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,7 +72,7 @@ export default function ReportButton({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   flag: { fontSize: 14, color: T.creamFaint, paddingHorizontal: 2 },
   menu: { position: "absolute", top: 22, right: 0, zIndex: 50, minWidth: 220, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 9, paddingVertical: 6 },
   menuHead: { paddingHorizontal: 12, paddingBottom: 6, fontSize: 10, color: T.creamFaint, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.8 },

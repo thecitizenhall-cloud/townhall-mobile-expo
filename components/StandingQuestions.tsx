@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, Linking, ActivityIndicator } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, byMode, type Palette } from "../lib/themeContext";
 import { charCount } from "../lib/chars";
 import { goVerify } from "../lib/residency";
 import {
@@ -40,13 +40,15 @@ function fmt(d?: string | null): string {
   } catch { return ""; }
 }
 
-const TONE = {
+const TONE = (T: Palette) => ({
   neutral: { color: T.creamDim, bg: "transparent", border: T.border },
-  teal:    { color: T.tealHi,   bg: T.tealLo,     border: "#17402F" },
-  amber:   { color: T.amberHi,  bg: T.amberLo,    border: "#4A3410" },
-} as const;
+  teal:    { color: T.tealHi,   bg: T.tealLo,     border: byMode(T, "#17402F", T.teal + "55") },
+  amber:   { color: T.amberHi,  bg: T.amberLo,    border: byMode(T, "#4A3410", T.amber + "55") },
+} as const);
 
 export default function StandingQuestions({ card, user, verified }: Props) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [questions, setQuestions] = useState<StandingQuestion[]>([]);
   const [loading, setLoading]     = useState(true);
   const [open, setOpen]           = useState(false);
@@ -97,7 +99,7 @@ export default function StandingQuestions({ card, user, verified }: Props) {
 
       {questions.map((q) => {
         const receipt = receiptFor(q);
-        const tone = TONE[receipt.tone] || TONE.neutral;
+        const tone = TONE(T)[receipt.tone] || TONE(T).neutral;
         const line = q.status === "standing" ? conditionSentence(q.condition_kind) : resolutionSentence(q);
         return (
           <View key={q.id} style={s.item}>
@@ -203,7 +205,7 @@ export default function StandingQuestions({ card, user, verified }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   window: { borderWidth: 1, borderColor: T.border, borderRadius: 14, backgroundColor: T.surface, padding: 14, marginTop: 14 },
   windowHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   windowHeadText: { flex: 1, fontSize: 11, fontWeight: "600", color: T.cream, textTransform: "uppercase", letterSpacing: 0.8 },
@@ -227,7 +229,7 @@ const s = StyleSheet.create({
   form: { borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 14, backgroundColor: T.bg },
   label: { fontSize: 12, fontWeight: "600", color: T.cream, marginBottom: 6 },
   hint: { fontSize: 12, lineHeight: 18, color: T.creamDim, marginBottom: 10 },
-  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.borderCtl, backgroundColor: "#141310", color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
+  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.borderCtl, backgroundColor: byMode(T, "#141310", T.bg), color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
 
   choice: { borderWidth: 1, borderColor: T.border, borderRadius: 8, padding: 10, marginTop: 8 },
   choiceOn: { borderColor: T.amber, backgroundColor: T.amberLo },
@@ -241,7 +243,7 @@ const s = StyleSheet.create({
   actions: { flexDirection: "row", gap: 8, marginTop: 12 },
   submit: { minHeight: 44, paddingHorizontal: 18, borderRadius: 8, backgroundColor: T.amber, alignItems: "center", justifyContent: "center" },
   submitOff: { opacity: 0.5 },
-  submitText: { color: "#12100B", fontSize: 14, fontWeight: "700" },
+  submitText: { color: byMode(T, "#12100B", T.bg), fontSize: 14, fontWeight: "700" },
   cancel: { minHeight: 44, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: T.border, alignItems: "center", justifyContent: "center" },
   cancelText: { color: T.creamDim, fontSize: 14 },
 });

@@ -14,7 +14,7 @@ import { supabase } from "../../lib/supabase";
 import { isStandingRefusal } from "../../lib/writeError";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { isVerifiedForCurrentNeighborhood, goVerify } from "../../lib/residency";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { municipalityForSlug } from "../../lib/townOf";
 
 // The stable key tying a raised issue back to a budget line (web parity):
@@ -24,7 +24,7 @@ const lineKey = (muni: string, line: any) => `${muni}::${line.fcoa || line.label
 
 // Validated categorical slots (dataviz reference palette, dark steps) against
 // T.surface — do not reorder: the ordering is the CVD-safety mechanism.
-const SEG_COLORS = ["#3987E5", T.teal, "#C98500", "#008300", "#9085E9"];
+const SEG_COLORS = (T: Palette) => (["#3987E5", T.teal, "#C98500", "#008300", "#9085E9"]);
 
 const fmtUSD = (n: any, digits = 0) =>
   n == null ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: digits });
@@ -63,6 +63,8 @@ const SHORT: Record<string, string> = {
 };
 
 export default function BudgetScreen() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [budget, setBudget] = useState<any>(null);
   const [lines, setLines] = useState<any[]>([]);
   const [town, setTown] = useState("");
@@ -309,7 +311,7 @@ export default function BudgetScreen() {
               <Pressable key={seg.label} onPress={() => setPicked({ kind: "seg", ...seg })}
                 style={{
                   width: `${(seg.avg_home / totalAvg) * 100}%`,
-                  backgroundColor: SEG_COLORS[i],
+                  backgroundColor: SEG_COLORS(T)[i],
                   height: "100%",
                   marginRight: i < breakdown.length - 1 ? 2 : 0,
                 }} />
@@ -322,7 +324,7 @@ export default function BudgetScreen() {
           </Text>
           {breakdown.map((seg: any, i: number) => (
             <View key={seg.label} style={s.legendRow}>
-              <View style={[s.swatch, { backgroundColor: SEG_COLORS[i] }]} />
+              <View style={[s.swatch, { backgroundColor: SEG_COLORS(T)[i] }]} />
               <Text style={s.legendLabel}>{SHORT[seg.label] || seg.label}</Text>
               <Text style={s.legendAmt}>{fmtUSD(seg.avg_home)}</Text>
               <Text style={s.legendPct}>{seg.pct?.toFixed(1)}%</Text>
@@ -472,7 +474,7 @@ export default function BudgetScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   head: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: T.border },

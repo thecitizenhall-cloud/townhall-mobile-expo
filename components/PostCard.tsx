@@ -3,30 +3,32 @@
 // the civic tracker, "open issue" link, and a report menu. Bot (council) and
 // official posts get distinct treatment.
 import { View, Text, Pressable, StyleSheet, Linking, Alert } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 import { timeAgo, initials } from "../lib/format";
 import ReportButton from "./ReportButton";
 
-const TAGS: Record<string, { bg: string; color: string; border: string }> = {
+const TAGS = (T: Palette): Record<string, { bg: string; color: string; border: string }> => ({
   banter: { bg: T.amberLo, color: T.amberHi, border: T.amberMid },
   issue: { bg: T.blueLo, color: T.blueHi, border: T.blueMid },
   question: { bg: T.tealLo, color: T.tealHi, border: T.teal },
   bulletin: { bg: T.purpleLo, color: T.purpleHi, border: T.purpleMid },
-};
+});
 
-const AV_COLORS = [
+const AV_COLORS = (T: Palette) => ([
   { bg: T.amberLo, color: T.amberHi }, { bg: T.tealLo, color: T.tealHi },
   { bg: T.purpleLo, color: T.purpleHi }, { bg: T.blueLo, color: T.blueHi },
   { bg: T.redLo, color: T.redHi },
-];
-function av(id?: string) {
+]);
+function av(T: Palette, id?: string) {
   let h = 0;
   for (let i = 0; i < String(id || "").length; i++) h = (h * 31 + String(id).charCodeAt(i)) | 0;
-  return AV_COLORS[Math.abs(h) % AV_COLORS.length];
+  return AV_COLORS(T)[Math.abs(h) % AV_COLORS(T).length];
 }
 
 function PostTag({ tag }: { tag: string }) {
-  const st = TAGS[tag] || TAGS.banter;
+  const T = useTheme();
+  const s = useStyles(makeStyles);
+  const st = TAGS(T)[tag] || TAGS(T).banter;
   return <Text style={[s.tag, { backgroundColor: st.bg, color: st.color, borderColor: st.border }]}>{tag}</Text>;
 }
 
@@ -39,11 +41,13 @@ export default function PostCard({
   onEscalate: (post: any) => void;
   onOpenIssue: (issueId: string) => void;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const name = post.profiles?.display_name || "Resident";
   const hood = post.profiles?.neighborhood || "Townhall";
   const isBot = post.profiles?.is_bot || false;
   const source = post.source_name || null;
-  const a = av(post.author_id);
+  const a = av(T, post.author_id);
   const tags: string[] = post.tags || [];
   const isBulletin = tags.includes("bulletin") && !isBot;
   const isOfficialPost = isBulletin && post.profiles?.is_official;
@@ -112,7 +116,7 @@ export default function PostCard({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   post: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.border },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   avatar: { width: 34, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center" },

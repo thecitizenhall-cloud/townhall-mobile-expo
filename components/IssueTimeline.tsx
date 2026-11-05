@@ -5,9 +5,9 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { supabase } from "../lib/supabase";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 
-const STEP: Record<string, { label: string; color: string }> = {
+const STEP = (T: Palette): Record<string, { label: string; color: string }> => ({
   raised: { label: "Concern raised", color: T.creamDim },
   staked: { label: "Residents weighed in", color: T.blueHi },
   supported: { label: "Residents weighed in", color: T.blueHi },
@@ -17,7 +17,7 @@ const STEP: Record<string, { label: string; color: string }> = {
   responded: { label: "Official responded", color: T.tealHi },
   resolved: { label: "Resolved", color: T.tealHi },
   reopened: { label: "Reopened", color: T.redHi },
-};
+});
 
 type Event = { kind: string; actor?: string; detail?: any; created_at?: string; synthetic?: boolean };
 
@@ -48,6 +48,8 @@ export default function IssueTimeline({
   stakeCount?: number;
   supportCount?: number;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [events, setEvents] = useState<Event[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -86,7 +88,7 @@ export default function IssueTimeline({
     <View style={s.root}>
       <Text style={s.head}>The journey</Text>
       {rows.map((it, i) => {
-        const step = STEP[it.kind] || { label: it.kind, color: T.creamDim };
+        const step = STEP(T)[it.kind] || { label: it.kind, color: T.creamDim };
         const last = i === rows.length - 1;
         const dt = detailText(it);
         return (
@@ -109,7 +111,7 @@ export default function IssueTimeline({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { paddingVertical: 16, borderTopWidth: 1, borderTopColor: T.border },
   head: { fontSize: 10, fontWeight: "600", color: T.amberHi, textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 14 },
   row: { flexDirection: "row", gap: 12, alignItems: "flex-start" },

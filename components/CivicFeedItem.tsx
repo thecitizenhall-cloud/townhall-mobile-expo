@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 import { outcomeFor } from "../lib/outcome";
 import type { CivicItem } from "../lib/supabase";
 
@@ -46,13 +46,15 @@ function dateLabel(item: any): string {
 // accents: only the two that ask something of the resident — a question you
 // asked came back, a matter past its own stated date — carry weight. A feed
 // where everything is highlighted highlights nothing.
-function bandColor(band: number): string {
+function bandColor(T: Palette, band: number): string {
   if (band === 0) return T.tealHi;
   if (band === 3) return T.amberHi;
   return T.creamFaint;
 }
 
 export default function CivicFeedItem({ item, onPress }: Props) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const isAlert = item.source === "noaa";
   const label = SOURCE_LABEL[item.source] ?? item.source;
 
@@ -67,7 +69,7 @@ export default function CivicFeedItem({ item, onPress }: Props) {
           {label.toUpperCase()}
         </Text>
         {item.outcome_signal && (() => {
-          const outcome = outcomeFor(item.outcome_signal);
+          const outcome = outcomeFor(T, item.outcome_signal);
           return (
             <View style={[s.outcomePill, { backgroundColor: outcome.bg }]}>
               <Text style={[s.outcomeText, { color: outcome.color }]}>{outcome.label}</Text>
@@ -83,8 +85,8 @@ export default function CivicFeedItem({ item, onPress }: Props) {
           "On the public record" on every card would be noise. */}
       {(item as any)._bandReason != null && (item as any)._band != null && (item as any)._band < 5 && (
         <View style={s.bandRow}>
-          <View style={[s.bandDot, { backgroundColor: bandColor((item as any)._band) }]} />
-          <Text style={[s.bandText, { color: bandColor((item as any)._band) }]} numberOfLines={1}>
+          <View style={[s.bandDot, { backgroundColor: bandColor(T, (item as any)._band) }]} />
+          <Text style={[s.bandText, { color: bandColor(T, (item as any)._band) }]} numberOfLines={1}>
             {(item as any)._bandReason}
           </Text>
         </View>
@@ -121,7 +123,7 @@ export default function CivicFeedItem({ item, onPress }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   card: {
     backgroundColor: T.surface,
     borderWidth: 1,

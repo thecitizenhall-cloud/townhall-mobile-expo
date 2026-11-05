@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { supabase } from "../lib/supabase";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 
 // The Pulse — the feed's opening "feel" (web parity: components/CivicPulse.jsx).
 // Reads the town's civic tempo back to the resident in three time-scales:
@@ -13,14 +13,14 @@ import { T } from "../lib/theme";
 
 type Row = { impact_type: string | null; outcome_signal: string | null; meeting_date: string | null };
 
-const IMPACT: Record<string, { noun: string; chip: string; color: string }> = {
+const IMPACT = (T: Palette): Record<string, { noun: string; chip: string; color: string }> => ({
   zoning:         { noun: "land use",       chip: "Land use",       color: T.amber },
   infrastructure: { noun: "infrastructure", chip: "Infrastructure", color: T.blue },
   budget:         { noun: "the budget",     chip: "Budget",         color: T.teal },
   education:      { noun: "the schools",    chip: "Schools",        color: T.purple },
   other:          { noun: "local matters",  chip: "Other",          color: T.creamFaint },
-};
-const info = (k: string) => IMPACT[k] || IMPACT.other;
+});
+const info = (T: Palette, k: string) => IMPACT(T)[k] || IMPACT(T).other;
 
 function md(s: string | null): Date | null {
   if (!s) return null;
@@ -31,6 +31,8 @@ function md(s: string | null): Date | null {
 const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
 
 export default function CivicPulse({ townId }: { townId: string | null }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [rows, setRows] = useState<Row[] | null>(null);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function CivicPulse({ townId }: { townId: string | null }) {
 
   const cats = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
   const [topKey, topN] = cats[0];
-  const topInfo = info(topKey);
+  const topInfo = info(T, topKey);
   const topShare = pct(topN, year.total);
   const yearLabel = now.getFullYear();
   const monthShare = pct(month.land, month.total);
@@ -124,14 +126,14 @@ export default function CivicPulse({ townId }: { townId: string | null }) {
 
       <View style={s.bar}>
         {cats.map(([k, n]) => (
-          <View key={k} style={{ width: `${pct(n, year.total)}%`, backgroundColor: info(k).color }} />
+          <View key={k} style={{ width: `${pct(n, year.total)}%`, backgroundColor: info(T, k).color }} />
         ))}
       </View>
       <View style={s.legend}>
         {cats.slice(0, 5).map(([k, n]) => (
           <View key={k} style={s.legItem}>
-            <View style={[s.swatch, { backgroundColor: info(k).color }]} />
-            <Text style={s.legTxt}>{info(k).chip} · {n}</Text>
+            <View style={[s.swatch, { backgroundColor: info(T, k).color }]} />
+            <Text style={s.legTxt}>{info(T, k).chip} · {n}</Text>
           </View>
         ))}
       </View>
@@ -151,7 +153,7 @@ export default function CivicPulse({ townId }: { townId: string | null }) {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   wrap: { marginHorizontal: 16, marginTop: 4, marginBottom: 14, padding: 16, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 14 },
   kicker: { flexDirection: "row", alignItems: "center", marginBottom: 11 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: T.tealHi, marginRight: 8 },

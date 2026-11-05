@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
-import { T } from "../../lib/theme";
+import { useTheme } from "../../lib/themeContext";
 
 // Session-start shuffle (web migration 033, pages/app.jsx): start_session()
 // moves last_session_at into previous_session_at when the gap exceeds three
@@ -20,6 +20,7 @@ function startSession() {
 // Profile and Tracker; Alerts are folded inline into the Profile tab. The
 // /tabs/* routes survive so existing navigations and deep links keep working.
 export default function TabsLayout() {
+  const T = useTheme();
   // The removed native headers used to clear the status bar — pad the top
   // inset here so screen content never sits under the notch.
   const insets = useSafeAreaInsets();
