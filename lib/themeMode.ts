@@ -18,11 +18,22 @@ export function resolveScheme(pref: ThemePreference, system: string | null | und
 /**
  * Applies the saved choice once it loads, unless the person has already
  * picked one in the meantime: a tap must never be undone by a slow read.
+ * Saves run one at a time, in tap order, so the last tap is what stays
+ * stored.
  */
-export function createPreferenceGate(apply: (p: ThemePreference) => void) {
+export function createPreferenceGate(
+  apply: (p: ThemePreference) => void,
+  save: (p: ThemePreference) => Promise<unknown> = async () => {},
+) {
   let chosen = false;
+  let queue: Promise<unknown> = Promise.resolve();
   return {
-    choose(p: ThemePreference) { chosen = true; apply(p); },
+    choose(p: ThemePreference) {
+      chosen = true;
+      apply(p);
+      queue = queue.then(() => save(p)).catch(() => {});
+      return queue;
+    },
     loaded(v: unknown) { if (!chosen && isThemePreference(v)) apply(v); },
   };
 }

@@ -35,16 +35,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // One gate for the provider's lifetime, so a tap made before the saved
   // value loads wins over it.
-  const [gate] = useState(() => createPreferenceGate(setPref));
+  const [gate] = useState(() =>
+    createPreferenceGate(setPref, (p) => AsyncStorage.setItem(STORAGE_KEY, p)));
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(gate.loaded).catch(() => {});
   }, [gate]);
 
-  const [setPreference] = useState(() => (p: ThemePreference) => {
-    gate.choose(p);
-    AsyncStorage.setItem(STORAGE_KEY, p).catch(() => {});
-  });
+  const [setPreference] = useState(() => (p: ThemePreference) => { gate.choose(p); });
 
   const scheme = resolveScheme(preference, system);
   // The canonical palette objects, never copies: byMode() and the styles
