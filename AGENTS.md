@@ -20,15 +20,20 @@ their header comment; change the two together.
 |---|---|
 | Install | `npm ci` |
 | Type check | `npx tsc --noEmit` |
+| Unit tests | `npm test` (node:test, Node 22.6 or later) |
 | Dependency audit gate | `node scripts/audit-gate.mjs` |
 | Run locally | `npx expo start` |
 | Device build | `eas build --platform android --profile preview` |
 
-- There is **no CI on pull requests**. `npx tsc --noEmit` is the only automated
-  check a change gets, so run it and say in the pull request that it is the only
-  check. The nightly workflow runs the type check and the audit gate on `main`.
-- There are no unit tests. Say plainly what was and was not exercised, and
-  whether it was run on a device.
+- There is **no CI on pull requests**. `npx tsc --noEmit` and `npm test` are the
+  only automated checks a change gets, so run both and say in the pull request
+  that they are the only checks. The nightly workflow runs the type check and
+  the audit gate on `main`.
+- `npm test` covers only the colour palettes so far (`lib/theme.test.mjs`).
+  Say plainly what else was and was not exercised, and whether it was run on a
+  device.
+- Test files live in `lib/`, never in `app/`: every file under `app/` becomes a
+  route.
 - Run `npm ci` in **every** checkout and worktree. Never reuse, copy or link a
   `node_modules` from somewhere else: a stale install gives wrong type-check and
   audit results that look real.
