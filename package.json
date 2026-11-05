@@ -7,7 +7,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test lib/*.test.mjs"
+    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"lib/**/*.test.mjs\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
