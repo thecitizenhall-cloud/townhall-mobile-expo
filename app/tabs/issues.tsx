@@ -6,19 +6,19 @@ import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { getWeeklyActivity, WeeklyActivity } from "../../lib/concernCards";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, byMode, type Palette } from "../../lib/themeContext";
 import ConcernCardItem from "../../components/ConcernCardItem";
 import {
   getMyQuestions, partitionQuestions, receiptFor, resolutionSentence, conditionSentence,
   StandingQuestion,
 } from "../../lib/standingQuestions";
 
-const STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
+const STATUS_META = (T: Palette): Record<string, { bg: string; color: string; label: string }> => ({
   open: { bg: T.blueLo, color: T.blueHi, label: "Open" },
   escalated: { bg: T.amberLo, color: T.amberHi, label: "Escalated" },
   expert: { bg: T.purpleLo, color: T.purpleHi, label: "Expert review" },
-  resolved: { bg: "#1A2A1A", color: T.tealHi, label: "Resolved" },
-};
+  resolved: { bg: byMode(T, "#1A2A1A", T.tealLo), color: T.tealHi, label: "Resolved" },
+});
 
 // Civic-engine concern-card outcome signals (analyzer PASS1). Used to render a
 // watched card's outcome when it returns to the resident on "Since last visit".
@@ -34,7 +34,9 @@ const OUTCOME_LABEL: Record<string, string> = {
 // A single issue row, reused across the "following", "since last visit", and
 // "neighborhood" sections. `highlight` draws the amber since-last-visit border.
 function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highlight?: boolean; updated?: boolean; onPress: () => void }) {
-  const sm = STATUS_META[issue.status] || STATUS_META.open;
+  const T = useTheme();
+  const s = useStyles(makeStyles);
+  const sm = STATUS_META(T)[issue.status] || STATUS_META(T).open;
   return (
     <Pressable style={[s.issue, highlight && s.issueHighlight]} onPress={onPress}>
       <Text style={s.issueTitle}>{issue.title}</Text>
@@ -65,6 +67,8 @@ function IssueRow({ issue, highlight, updated, onPress }: { issue: any; highligh
 // asked on, then either what the record did or what it is still waiting for.
 // Deliberately not "Answered by: <condition>" — a condition is not an answer.
 function QuestionRow({ q, isReturn, onPress }: { q: StandingQuestion; isReturn: boolean; onPress: () => void }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const receipt = receiptFor(q);
   const tone = receipt.tone === "teal" ? T.tealHi : receipt.tone === "amber" ? T.amberHi : T.creamDim;
   const title = q.concern_cards?.title;
@@ -86,6 +90,8 @@ function QuestionRow({ q, isReturn, onPress }: { q: StandingQuestion; isReturn: 
 // A watched CONCERN CARD whose outcome flipped since last visit — the automated
 // civic-engine round trip's "return" leg (parity with web YourIssuesScreen).
 function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const now = OUTCOME_LABEL[card.outcome_signal as string] || card.outcome_signal || "Updated";
   // Prior outcome (from the notification payload) lets us show the *movement*,
   // not just where it landed — the round trip made legible.
@@ -110,6 +116,8 @@ function MovedCardRow({ card, onPress }: { card: any; onPress: () => void }) {
 }
 
 export default function YourIssuesScreen() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -374,7 +382,7 @@ export default function YourIssuesScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center" },
   content: { padding: 16, paddingBottom: 40 },

@@ -1,9 +1,10 @@
 import { View, Text, StyleSheet } from "react-native";
 import { router } from "expo-router";
-import { T } from "../../lib/theme";
+import { useStyles, type Palette } from "../../lib/themeContext";
 import { TouchableOpacity } from "react-native";
 
 export default function OnboardingAccount() {
+  const s = useStyles(makeStyles);
   return (
     <View style={s.root}>
       <Text style={s.step}>Account created</Text>
@@ -24,7 +25,7 @@ export default function OnboardingAccount() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, padding: 28, paddingTop: 48, backgroundColor: T.bg },
   step: { color: T.amber, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 14 },
   title: { color: T.cream, fontSize: 28, fontWeight: "600", marginBottom: 18, lineHeight: 36 },

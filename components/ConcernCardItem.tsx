@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 import { councilLabel } from "../lib/cardArea";
 import { outcomeFor } from "../lib/outcome";
 import { stalledBadge } from "../lib/roundTrip";
@@ -13,8 +13,10 @@ type Props = {
 };
 
 export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const hasOutcome = !!card.outcome_signal;
-  const outcome = outcomeFor(card.outcome_signal);
+  const outcome = outcomeFor(T, card.outcome_signal);
   const quote = card.source_quote ?? card.quote;
   const summary = card.summary ?? card.body;
   const dateStr = card.meeting_date ?? card.created_at;
@@ -65,7 +67,7 @@ export default function ConcernCardItem({ card, onPress, isWatched }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   card: {
     backgroundColor: T.surface,
     borderWidth: 1,

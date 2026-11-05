@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { reservedNameError, clipDisplayName, finalDisplayName } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { municipalityForSlug } from "../../lib/townOf";
 import { timeAgo } from "../../lib/format";
 import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } from "../../lib/push";
@@ -51,16 +51,18 @@ const PREF_ROWS = [
 // TIERS): same keys, labels, thresholds (trust_score points), and accent colors.
 // Standing rises with trust_score; the current tier is highlighted and tiers not
 // yet reached are dimmed.
-const TIERS = [
+const TIERS = (T: Palette) => ([
   { key: "resident",    label: "Resident",        pts: 0,    color: T.creamDim, dot: T.creamFaint },
   { key: "contributor", label: "Contributor",     pts: 200,  color: T.amberHi,  dot: T.amber },
   { key: "voice",       label: "Community voice",  pts: 600,  color: T.blueHi,   dot: T.blue },
   { key: "moderator",   label: "Moderator",        pts: 1200, color: T.purpleHi, dot: T.purple },
-] as const;
-const currentTier = (score: number) => [...TIERS].reverse().find((t) => score >= t.pts) || TIERS[0];
-const nextTier = (score: number) => TIERS.find((t) => t.pts > score) || null;
+] as const);
+const currentTier = (T: Palette, score: number) => [...TIERS(T)].reverse().find((t) => score >= t.pts) || TIERS(T)[0];
+const nextTier = (T: Palette, score: number) => TIERS(T).find((t) => t.pts > score) || null;
 
 export default function ProfileScreen() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   // /tabs/profile?tab=tracker opens straight onto the Tracker tab (the old
   // standalone tracker destination, now folded into Me).
   const { tab } = useLocalSearchParams<{ tab?: string }>();
@@ -411,8 +413,8 @@ export default function ProfileScreen() {
 
   // Trust standing derived from trust_score (web parity).
   const score = profile?.trust_score || 0;
-  const tier = currentTier(score);
-  const next = nextTier(score);
+  const tier = currentTier(T, score);
+  const next = nextTier(T, score);
 
   return (
     // The route/commute fields sit near the bottom of a long scroll and had no
@@ -514,7 +516,7 @@ export default function ProfileScreen() {
               {next ? `${(next.pts - score).toLocaleString()} pts to ${next.label}` : "Top tier reached"}
             </Text>
             <View style={s.tierLadder}>
-              {TIERS.map((t) => {
+              {TIERS(T).map((t) => {
                 const isCurrent = t.key === tier.key;
                 const locked = score < t.pts;
                 return (
@@ -735,7 +737,7 @@ export default function ProfileScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   loadErr: { marginHorizontal: 16, marginTop: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
   loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },

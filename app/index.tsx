@@ -2,10 +2,11 @@ import { useEffect } from "react";
 import { router } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 import { supabase } from "../lib/supabase";
-import { T } from "../lib/theme";
+import { useTheme } from "../lib/themeContext";
 
 // Entry point: check auth + onboarding state, route accordingly
 export default function Index() {
+  const T = useTheme();
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();

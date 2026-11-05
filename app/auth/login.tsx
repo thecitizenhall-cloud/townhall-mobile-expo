@@ -5,13 +5,15 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { SITE_URL } from "../../lib/config";
 
 // Pledge funnel (mobile port of the web guest demo). Mobile has no guest feed —
 // unauthenticated users land here — so a prospective resident whose town isn't
 // covered yet can pledge it. Posts to the web /api/pledge route (town_pledges).
 function PledgeYourTown() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [open, setOpen]     = useState(false);
   const [town, setTown]     = useState("");
   const [email, setEmail]   = useState("");
@@ -65,6 +67,8 @@ function PledgeYourTown() {
 }
 
 export default function Login() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -218,7 +222,7 @@ export default function Login() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   scroll: { flexGrow: 1, padding: 28, paddingTop: 80 },
   brand: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 32 },

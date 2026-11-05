@@ -50,6 +50,16 @@ export const T = {
 
 export type ThemeColor = keyof typeof T;
 
+// A whole palette, dark or light. Screens never import T or LIGHT directly:
+// they read the active one with useTheme() / useStyles() from
+// lib/themeContext.tsx (lib/theme.test.mjs checks that), so a theme switch
+// reaches them. T stays exported as the dark palette for that file and the test.
+export type Palette = Record<ThemeColor, string>;
+
+// For the few colours that are literal hexes on dark, not tokens: keep the
+// dark value exactly, and name what light uses instead.
+export const byMode = (P: Palette, dark: string, light: string) => (P === T ? dark : light);
+
 // THE LIGHT PALETTE. Not used by any screen yet: until the screens read the
 // palette at runtime, the app stays dark (T above). Values are web's LIGHT
 // (lib/theme.js), key for key; change both together, and don't pick new hexes
@@ -59,7 +69,7 @@ export type ThemeColor = keyof typeof T;
 // DARKER. One rule light adds: a family's BASE must also pass as text, because
 // the code uses it as text (T.amber on links and labels). lib/theme.test.mjs
 // checks every one of these.
-export const LIGHT: Record<ThemeColor, string> = {
+export const LIGHT: Palette = {
   bg: "#FBF9F4",
   surface: "#FFFFFF",
   surfaceHi: "#F3EFE7",

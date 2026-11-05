@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { supabase, ConcernCard, Profile } from "../../lib/supabase";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import ConcernCardItem from "../../components/ConcernCardItem";
 
 export default function OnboardingWelcome() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [cards, setCards] = useState<ConcernCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,7 +155,7 @@ export default function OnboardingWelcome() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, padding: 24, paddingTop: 60, backgroundColor: T.bg },
   welcome: { color: T.cream, fontSize: 28, fontWeight: "600", lineHeight: 36, marginBottom: 14 },
   sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 28 },

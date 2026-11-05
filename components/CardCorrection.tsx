@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import { supabase } from "../lib/supabase";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, byMode, type Palette } from "../lib/themeContext";
 import { charCount, clipChars } from "../lib/chars";
 
 const MIN = 10;
@@ -23,6 +23,8 @@ const MAX = 2000;
 // lib/chars.ts, not .length.
 
 export default function CardCorrection({ cardId }: { cardId: string }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const [claim, setClaim] = useState("");
   const [email, setEmail] = useState("");
@@ -118,14 +120,14 @@ export default function CardCorrection({ cardId }: { cardId: string }) {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   openLink: { minHeight: 44, justifyContent: "center", marginTop: 6 },
   openLinkText: { color: T.creamFaint, fontSize: 13, textDecorationLine: "underline" },
   done: { fontSize: 13, lineHeight: 21, color: T.teal, marginTop: 14 },
   box: { borderWidth: 1, borderColor: T.border, borderRadius: 14, backgroundColor: T.surface, padding: 14, marginTop: 14 },
   head: { fontSize: 11, fontWeight: "600", color: T.amberHi, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
   lede: { fontSize: 13, lineHeight: 20, color: T.creamDim, marginBottom: 12 },
-  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.borderCtl, backgroundColor: "#141310", color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
+  input: { minHeight: 84, borderRadius: 8, borderWidth: 1, borderColor: T.borderCtl, backgroundColor: byMode(T, "#141310", T.bg), color: T.cream, fontSize: 14, lineHeight: 21, padding: 10, textAlignVertical: "top" },
   email: { minHeight: 44, marginTop: 10, textAlignVertical: "center" },
   error: { marginTop: 10, fontSize: 12, color: T.redHi },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14 },

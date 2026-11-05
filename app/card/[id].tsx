@@ -12,7 +12,7 @@ import {
 import { goVerify, isVerifiedForCurrentNeighborhood } from "../../lib/residency";
 import CardCorrection from "../../components/CardCorrection";
 import { writeErrorMessage } from "../../lib/writeError";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { timeAgo } from "../../lib/format";
 import { cleanAreaQuery, osmSearchUrl, townLabel } from "../../lib/cardArea";
 import { SITE_URL } from "../../lib/config";
@@ -66,6 +66,7 @@ function cardMapUri(card: any) {
 // Static map of the affected area; hidden if the route can't render it (no key
 // / not geocodable) so the "View on map" link below remains the fallback.
 function CardAreaMap({ card }: { card: any }) {
+  const s = useStyles(makeStyles);
   const [failed, setFailed] = useState(false);
   if (failed) return null;
   return (
@@ -77,6 +78,8 @@ function CardAreaMap({ card }: { card: any }) {
 }
 
 export default function ConcernCardDetail() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [card, setCard] = useState<any>(null);
@@ -360,7 +363,7 @@ export default function ConcernCardDetail() {
     );
   }
 
-  const outcome = outcomeFor(card.outcome_signal ?? "pending");
+  const outcome = outcomeFor(T, card.outcome_signal ?? "pending");
   const impact = IMPACT_LABELS[card.impact_type] || "📋 Civic";
 
   // Only actual comments on the card belong in the comment section. Related feed
@@ -462,7 +465,7 @@ export default function ConcernCardDetail() {
               </Text>
               <View style={s.timeline}>
                 {meetings.map((m, i) => {
-                  const mo = outcomeFor(m.outcome_signal ?? "pending");
+                  const mo = outcomeFor(T, m.outcome_signal ?? "pending");
                   const last = i === meetings.length - 1;
                   return (
                     <View key={m.id} style={s.meetingRow}>
@@ -606,7 +609,7 @@ export default function ConcernCardDetail() {
           <View style={{ marginTop: 8 }}>
             <Text style={s.sectionHead}>Related civic items</Text>
             {relatedCards.map((rc) => {
-              const ro = outcomeFor(rc.outcome_signal ?? "pending");
+              const ro = outcomeFor(T, rc.outcome_signal ?? "pending");
               return (
                 <Pressable key={rc.id} style={s.relatedCard} onPress={() => router.push({ pathname: "/card/[id]", params: { id: rc.id } })}>
                   <Text style={s.relatedKind}>{rc.source_url?.includes("seeclickfix") ? "311 Report" : "Council item"}</Text>
@@ -646,7 +649,7 @@ export default function ConcernCardDetail() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   loadErr: { marginBottom: 12, padding: 12, borderWidth: 1, borderColor: T.redHi + "55", backgroundColor: T.redLo, borderRadius: 10 },
   loadErrText: { color: T.redHi, fontSize: 13, lineHeight: 18 },
   root: { flex: 1, backgroundColor: T.bg },

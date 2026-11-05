@@ -14,7 +14,7 @@ import { useState } from "react";
 import {
   View, Text, TextInput, Pressable, StyleSheet, Alert,
 } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 import ReportButton from "./ReportButton";
 
 export type Stance = "support" | "oppose" | "neutral";
@@ -36,12 +36,13 @@ export type KitComment = {
 
 export type SubIssue = { id: string; title: string };
 
-const STANCES: { key: Stance; label: string; short?: string; color: string; bg: string; none: string }[] = [
+const STANCES = (T: Palette): { key: Stance; label: string; short?: string; color: string; bg: string; none: string }[] => ([
   { key: "support", label: "Support", color: T.tealHi, bg: T.tealLo, none: "No one has spoken in support yet." },
   { key: "oppose", label: "Oppose", color: T.redHi, bg: T.redLo, none: "No one has objected yet." },
   { key: "neutral", label: "Questions & neutral", short: "Neutral", color: T.blueHi, bg: T.blueLo, none: "No questions yet." },
-];
-const STANCE_KEYS = STANCES.map((s) => s.key);
+]);
+// The stance keys, in display order. Not derived from STANCES, which needs a palette.
+const STANCE_KEYS: Stance[] = ["support", "oppose", "neutral"];
 
 export function normalizeStance(s?: string | null): Stance {
   const v = String(s || "").toLowerCase().trim();
@@ -59,6 +60,8 @@ export function groupByStance(comments: KitComment[]): Record<Stance, KitComment
 
 // One comment, rendered uniformly.
 function Post({ c, timeAgo, currentUser }: { c: KitComment; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const canReport = c.reportType && c.reportId && currentUser && c.authorId !== currentUser.id;
   return (
     <View style={s.post}>
@@ -79,6 +82,8 @@ function Post({ c, timeAgo, currentUser }: { c: KitComment; timeAgo?: (d?: strin
 
 // The Support / Oppose / Neutral lanes for one subsection's comments.
 function StanceLanes({ comments, subIssues, timeAgo, currentUser }: { comments: KitComment[]; subIssues?: { id: string; title: string }[]; timeAgo?: (d?: string | null) => string; currentUser?: any }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const g = groupByStance(comments);
   // The web renders the three stances as side-by-side columns; three columns
   // don't fit a phone, so here the "columns" are segmented chips with counts
@@ -89,7 +94,7 @@ function StanceLanes({ comments, subIssues, timeAgo, currentUser }: { comments: 
   if (!comments.length) {
     return <Text style={s.none}>No comments yet — be the first neighbor to weigh in.</Text>;
   }
-  const active = STANCES.find((st) => st.key === lane) || STANCES[0];
+  const active = STANCES(T).find((st) => st.key === lane) || STANCES(T)[0];
   // Inside the selected position: direct comments first, then a nested
   // sub-section per sub-issue that holds comments at this stance — the
   // positions are the top-level sections, sub-issues live inside them.
@@ -102,7 +107,7 @@ function StanceLanes({ comments, subIssues, timeAgo, currentUser }: { comments: 
   return (
     <>
       <View style={s.laneChips}>
-        {STANCES.map((st) => (
+        {STANCES(T).map((st) => (
           <Pressable key={st.key} onPress={() => setLane(st.key)}
             style={[s.laneChip, lane === st.key && { backgroundColor: st.bg, borderColor: st.color }]}>
             <View style={[s.dot, { backgroundColor: st.color }]} />
@@ -136,6 +141,8 @@ function StanceComposer({
   onPost: (args: { body: string; stance: Stance }) => Promise<boolean>;
   placeholder?: string;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [text, setText] = useState("");
   const [stance, setStance] = useState<Stance>("neutral");
   const [posting, setPosting] = useState(false);
@@ -171,7 +178,7 @@ function StanceComposer({
         multiline
       />
       <View style={s.tools}>
-        {STANCES.map((st) => {
+        {STANCES(T).map((st) => {
           const on = stance === st.key;
           return (
             <Pressable
@@ -203,6 +210,8 @@ export default function CommentKit({
   onPost: (args: { body: string; stance: Stance; subId: string | null }) => Promise<boolean>;
   onCreateSubIssue: (title: string) => Promise<void>;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
@@ -297,7 +306,7 @@ export default function CommentKit({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   grid: { gap: 14, paddingVertical: 8 },
   laneChips: { flexDirection: "row", gap: 6, marginBottom: 8 },
   laneChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: T.border },

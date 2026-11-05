@@ -9,7 +9,7 @@ import { getMyDistrictId, setMyDistrictId } from "../../lib/district";
 import { supabase } from "../../lib/supabase";
 import { detectDistrict } from "../../lib/detectDistrict";
 import { escapeLike } from "../../lib/escapeLike";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 
 // Live schema: neighborhoods keys off city_id (FK to cities). There is no
 // municipality_id column on this table — that lives on neighborhood_scores.
@@ -50,6 +50,8 @@ const JACKSON_LAT = 40.103;
 const JACKSON_LNG = -74.349;
 
 export default function OnboardingNeighborhood() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   // ?verify=1 → on-demand just-in-time verification (continue to the ZK proof).
   // Absent → initial onboarding (enter and read; ZK runs later, on first act).
   const { verify } = useLocalSearchParams<{ verify?: string }>();
@@ -332,7 +334,7 @@ export default function OnboardingNeighborhood() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, padding: 28, paddingTop: 32, backgroundColor: T.bg },
   title: { color: T.cream, fontSize: 24, fontWeight: "600", marginBottom: 10 },
   sub: { color: T.creamDim, fontSize: 14, lineHeight: 22, marginBottom: 28 },

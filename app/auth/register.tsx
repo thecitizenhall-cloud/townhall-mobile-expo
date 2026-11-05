@@ -6,9 +6,11 @@ import {
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { reservedNameError, clipDisplayName, finalDisplayName } from "../../lib/displayName";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 
 export default function Register() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -141,7 +143,7 @@ export default function Register() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   scroll: { flexGrow: 1, padding: 28, paddingTop: 60 },
   back: { marginBottom: 28 },

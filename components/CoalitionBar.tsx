@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
-import { T } from "../lib/theme";
+import { useTheme, useStyles, type Palette } from "../lib/themeContext";
 
 // Coalition threshold bar — the "majority moves things forward" mechanism made
 // legible (mobile parity: components/CoalitionBar.jsx on web). Shows the verified
@@ -23,6 +23,8 @@ export default function CoalitionBar({
   status?: string;
   council?: string;
 }) {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const moved     = status === "escalated" || status === "expert" || status === "resolved";
   const reached   = moved || count >= threshold;
   const remaining = Math.max(0, threshold - count);
@@ -65,7 +67,7 @@ export default function CoalitionBar({
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   wrap: {
     borderWidth: 1,
     borderColor: T.amber + "44",

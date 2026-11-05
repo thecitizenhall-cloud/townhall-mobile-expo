@@ -44,7 +44,7 @@ import { getGeneralNeighborhoodId, dedupeSyncedPosts } from "../../lib/generalNe
 import { getCurrentUser } from "../../lib/sessionUser";
 import { hasResidencyProof, goVerify } from "../../lib/residency";
 import CivicPulse from "../../components/CivicPulse";
-import { T } from "../../lib/theme";
+import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { SITE_URL } from "../../lib/config";
 import { WebView } from "react-native-webview";
 import { WEB_DARK_JS } from "../../lib/webDark";
@@ -55,12 +55,12 @@ import PostCard from "../../components/PostCard";
 // (concern cards + SeeClickFix + agendas + township news + NOAA), so both clients
 // share one source list. Resident posts and civic issues are read from Supabase.
 
-const TAGS: Record<string, { bg: string; color: string; border: string }> = {
+const TAGS = (T: Palette): Record<string, { bg: string; color: string; border: string }> => ({
   banter: { bg: T.amberLo, color: T.amberHi, border: T.amberMid },
   issue: { bg: T.blueLo, color: T.blueHi, border: T.blueMid },
   question: { bg: T.tealLo, color: T.tealHi, border: T.teal },
   bulletin: { bg: T.purpleLo, color: T.purpleHi, border: T.purpleMid },
-};
+});
 
 // Tags the general composer offers. Mirrors web: Banter is shelved (its TAGS
 // style is kept only so any legacy banter posts still render); Issue isn't
@@ -118,6 +118,8 @@ function matchedRoadFor(item: CivicItem, myRoads: { road_name: string; road_name
 }
 
 export default function FeedScreen() {
+  const T = useTheme();
+  const s = useStyles(makeStyles);
   const [items, setItems] = useState<FeedItem[]>([]);
   const [posts, setPosts] = useState<any[]>([]);
   const [issues, setIssues] = useState<any[]>([]);
@@ -1060,7 +1062,7 @@ export default function FeedScreen() {
             <View style={s.composeFooter}>
               <View style={s.tagRow}>
                 {COMPOSE_TAGS.map((tag) => {
-                  const ts = TAGS[tag];
+                  const ts = TAGS(T)[tag];
                   const on = draftTag === tag;
                   return (
                     <Pressable key={tag} onPress={() => setDraftTag(tag)} style={[s.tagChip, { backgroundColor: on ? ts.bg : "transparent", borderColor: on ? ts.border : T.border }]}>
@@ -1151,7 +1153,7 @@ export default function FeedScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (T: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: T.bg },
   center: { justifyContent: "center", alignItems: "center" },
   // Was 200: clearance for a compose bar that used to overlay the list. The bar

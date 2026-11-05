@@ -25,11 +25,12 @@
 // The feed-band prose in lib/townFeed.ts (outcomeLabel) is deliberately a
 // different vocabulary -- emoji + a sentence for the stream -- and is not
 // merged here.
-import { T } from "./theme";
+import type { Palette } from "./theme";
 
 export type OutcomeStyle = { label: string; color: string; bg: string };
 
-export const OUTCOME_LABELS: Record<string, OutcomeStyle> = {
+// Colours are palette functions so they follow the active theme.
+const outcomeLabels = (T: Palette): Record<string, OutcomeStyle> => ({
   pending:    { label: "Pending vote",      color: T.amberHi,  bg: T.amberLo },
   // Not a decision state -- nothing will be voted on. Neutral on purpose.
   announced:  { label: "For information",   color: T.creamDim, bg: T.surface },
@@ -40,14 +41,14 @@ export const OUTCOME_LABELS: Record<string, OutcomeStyle> = {
   tabled:     { label: "Tabled",            color: T.creamDim, bg: T.surface },
   discussed:  { label: "Under discussion",  color: T.blueHi,   bg: T.blueLo },
   introduced: { label: "Introduced",        color: T.purpleHi, bg: T.purpleLo },
-};
+});
 
 // Neutral, never green, and never the bare enum. An unrecognised signal is a
 // value this app has not been taught to interpret, so it says so plainly
 // instead of dressing it as an approval.
-const UNKNOWN: OutcomeStyle = { label: "On the record", color: T.creamDim, bg: T.surface };
+const unknown = (T: Palette): OutcomeStyle => ({ label: "On the record", color: T.creamDim, bg: T.surface });
 
-export function outcomeFor(signal?: string | null): OutcomeStyle {
-  if (!signal) return UNKNOWN;
-  return OUTCOME_LABELS[String(signal).toLowerCase()] ?? UNKNOWN;
+export function outcomeFor(T: Palette, signal?: string | null): OutcomeStyle {
+  if (!signal) return unknown(T);
+  return outcomeLabels(T)[String(signal).toLowerCase()] ?? unknown(T);
 }
