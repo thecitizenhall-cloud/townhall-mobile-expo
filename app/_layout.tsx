@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { StatusBar } from "expo-status-bar";
-import { ThemeProvider, useTheme } from "../lib/themeContext";
+import { ThemeProvider, useTheme, useThemeMode } from "../lib/themeContext";
 
 // The provider sits above the stack so the stack's own colours (header,
 // screen background) read the active palette too.
@@ -18,6 +18,7 @@ export default function RootLayout() {
 
 function RootStack() {
   const T = useTheme();
+  const { scheme } = useThemeMode();
   // Edge-to-edge Android draws under the system nav bar — pad the bottom
   // inset globally so no screen's content sits behind it (also covers the
   // iOS home indicator).
@@ -42,7 +43,8 @@ function RootStack() {
 
   return (
     <>
-      <StatusBar style="light" />
+      {/* Dark icons on the light palette, light icons on the dark one. */}
+      <StatusBar style={scheme === "light" ? "dark" : "light"} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: T.bg },
