@@ -14,3 +14,15 @@ export function resolveScheme(pref: ThemePreference, system: string | null | und
   if (pref === "light" || pref === "dark") return pref;
   return system === "light" ? "light" : "dark";
 }
+
+/**
+ * Applies the saved choice once it loads, unless the person has already
+ * picked one in the meantime: a tap must never be undone by a slow read.
+ */
+export function createPreferenceGate(apply: (p: ThemePreference) => void) {
+  let chosen = false;
+  return {
+    choose(p: ThemePreference) { chosen = true; apply(p); },
+    loaded(v: unknown) { if (!chosen && isThemePreference(v)) apply(v); },
+  };
+}

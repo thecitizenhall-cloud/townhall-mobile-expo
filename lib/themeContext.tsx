@@ -7,11 +7,11 @@
 // The choice is System, Light or Dark (Profile > Appearance), saved on the
 // device. System follows the phone's setting. app.json still forces the
 // native side dark, so until that is lifted System resolves to dark.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { T as DARK, LIGHT, byMode, type Palette } from "./theme";
-import { isThemePreference, resolveScheme, type Scheme, type ThemePreference } from "./themeMode";
+import { createPreferenceGate, resolveScheme, type Scheme, type ThemePreference } from "./themeMode";
 
 const STORAGE_KEY = "th_theme";
 
@@ -33,18 +33,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const system = useColorScheme();
   const [preference, setPref] = useState<ThemePreference>("system");
 
-  useEffect(() => {
-    let live = true;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((v) => { if (live && isThemePreference(v)) setPref(v); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, []);
+  // One gate for the provider's lifetime, so a tap made before the saved
+  // value loads wins over it.
+  const [gate] = useState(() => createPreferenceGate(setPref));
 
-  const setPreference = useCallback((p: ThemePreference) => {
-    setPref(p);
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then(gate.loaded).catch(() => {});
+  }, [gate]);
+
+  const [setPreference] = useState(() => (p: ThemePreference) => {
+    gate.choose(p);
     AsyncStorage.setItem(STORAGE_KEY, p).catch(() => {});
-  }, []);
+  });
 
   const scheme = resolveScheme(preference, system);
   // The canonical palette objects, never copies: byMode() and the styles
