@@ -5,7 +5,7 @@ import { WebView } from "react-native-webview";
 import { muniLabel } from "../lib/cardArea";
 import { SITE_URL } from "../lib/config";
 import { useTheme, useStyles, type Palette } from "../lib/themeContext";
-import { WEB_DARK_JS } from "../lib/webDark";
+import { useWebTheme } from "../lib/useWebTheme";
 
 // The page can load while the map on it stays blank. From the app that looked
 // like a working header over an empty screen with no way to tell why. The page
@@ -101,6 +101,8 @@ function mapFailed(p: Probe): boolean {
 
 export default function CivicMapScreen() {
   const T = useTheme();
+  const webRef = useRef<WebView>(null);
+  const webTheme = useWebTheme(webRef);
   const s = useStyles(makeStyles);
   const params = useLocalSearchParams<{ muni?: string | string[] }>();
   const [loading, setLoading] = useState(true);
@@ -156,6 +158,7 @@ export default function CivicMapScreen() {
       <Stack.Screen options={{ title: town ? `${town} civic map` : "Civic map" }} />
       <WebView
         key={reloadKey}
+        ref={webRef}
         source={{ uri }}
         style={s.webView}
         onLoadStart={() => {
@@ -164,8 +167,8 @@ export default function CivicMapScreen() {
           setProbe(null);
           setPageError(null);
         }}
-        injectedJavaScriptBeforeContentLoaded={WEB_DARK_JS + MAP_PROBE}
-        injectedJavaScript={WEB_DARK_JS}
+        injectedJavaScriptBeforeContentLoaded={webTheme + MAP_PROBE}
+        injectedJavaScript={webTheme}
         onMessage={(event) => {
           try {
             const msg = JSON.parse(event.nativeEvent.data);

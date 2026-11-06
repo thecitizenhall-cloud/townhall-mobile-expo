@@ -7,7 +7,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { attestationStatement, recordAttestation } from "../../lib/attestation";
 import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
-import { WEB_DARK_JS } from "../../lib/webDark";
+import { useWebTheme } from "../../lib/useWebTheme";
 
 // The ZK proof is generated in a WebView using the same snarkjs + WASM artifacts
 // that the web app uses. This avoids shipping a React Native snarkjs port while
@@ -51,6 +51,7 @@ export default function OnboardingZKProof() {
   }>();
 
   const webRef = useRef<WebView>(null);
+  const webTheme = useWebTheme(webRef);
   const [status, setStatus] = useState<"idle" | "proving" | "done" | "error">("idle");
   const [statusMsg, setStatusMsg] = useState("Waiting to start…");
   const [attested, setAttested] = useState(false);
@@ -197,8 +198,8 @@ export default function OnboardingZKProof() {
         onRenderProcessGone={() => loadFailed("The residency prover stopped unexpectedly. Try again.")}
         onContentProcessDidTerminate={() => loadFailed("The residency prover stopped unexpectedly. Try again.")}
         style={{ height: 1, width: 1, opacity: 0 }}
-        injectedJavaScriptBeforeContentLoaded={WEB_DARK_JS + injectedJS}
-        injectedJavaScript={WEB_DARK_JS}
+        injectedJavaScriptBeforeContentLoaded={webTheme + injectedJS}
+        injectedJavaScript={webTheme}
         onMessage={handleMessage}
         javaScriptEnabled
         domStorageEnabled

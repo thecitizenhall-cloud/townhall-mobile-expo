@@ -5,11 +5,12 @@
 // change; a factory can.
 //
 // The choice is System, Light or Dark (Profile > Appearance), saved on the
-// device. System follows the phone's setting. app.json still forces the
-// native side dark, so until that is lifted System resolves to dark.
+// device. System follows the phone's setting (app.json userInterfaceStyle
+// "automatic"); a phone with no dark mode, like Android 7, reads as light.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SystemUI from "expo-system-ui";
 import { T as DARK, LIGHT, byMode, type Palette } from "./theme";
 import { createPreferenceGate, resolveScheme, type Scheme, type ThemePreference } from "./themeMode";
 
@@ -48,6 +49,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // The canonical palette objects, never copies: byMode() and the styles
   // cache both key on identity.
   const palette = scheme === "light" ? LIGHT : DARK;
+
+  // The native root view shows behind screens during transitions and under
+  // the keyboard; app.json can only give it one colour, so follow the palette
+  // here.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(palette.bg).catch(() => {});
+  }, [palette]);
   const value = useMemo(
     () => ({ palette, scheme, preference, setPreference }),
     [palette, scheme, preference, setPreference],
