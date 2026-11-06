@@ -44,7 +44,12 @@ export default function IssueDetail() {
   const { id: issueId } = useLocalSearchParams<{ id: string }>();
 
   const [issue, setIssue] = useState<any>(null);
-  const [coalThreshold, setCoalThreshold] = useState<number | null>(null); // per-neighborhood coalition line (RPC); null → fallback default
+  // Per-neighborhood coalition line (RPC), tagged with the issue AND the request
+  // it was read for, so an earlier request's line is never shown, not even for
+  // one render.
+  const [coalLine, setCoalLine] = useState<{ key: string | null; req: number; threshold: number | null; unavailable: boolean }>(
+    { key: null, req: 0, threshold: null, unavailable: false });
+  const coalReq = useRef(0);
   const [replies, setReplies] = useState<any[]>([]);
   const [expertAnswers, setExpertAnswers] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -123,15 +128,26 @@ export default function IssueDetail() {
   }, [issueId]);
 
   // Coalition threshold — how many verified residents make this issue a formal
-  // request. Read from the DB (scales with the verified-resident roll); on any
-  // failure the render falls back to a flat default, so the bar is never worse
-  // than the no-RPC version. (web parity: IssueDetailScreen coalThreshold effect)
+  // request. Read from the DB (scales with the verified-resident roll). Until
+  // it answers the bar shows no line; on a failure it says the line is
+  // unavailable. It never substitutes a number (web #219).
+  const coalKey = issue ? `${issue.id}|${issue.neighborhood_id ?? ""}` : null;
+  const coalReady = coalLine.key === coalKey && coalLine.req === coalReq.current;
   useEffect(() => {
     if (!issue) return;
     let cancelled = false;
+    const key = `${issue.id}|${issue.neighborhood_id ?? ""}`;
+    const req = ++coalReq.current;
+    setCoalLine((prev) => (prev.req === 0 && prev.key === null ? prev : { key: null, req: 0, threshold: null, unavailable: false }));
     (async () => {
-      const { data, error } = await supabase.rpc("coalition_threshold", { nbhd: issue.neighborhood_id ?? null });
-      if (!cancelled && !error && typeof data === "number") setCoalThreshold(data);
+      try {
+        const { data, error } = await supabase.rpc("coalition_threshold", { nbhd: issue.neighborhood_id ?? null });
+        if (cancelled) return;
+        if (error || typeof data !== "number") setCoalLine({ key, req, threshold: null, unavailable: true });
+        else setCoalLine({ key, req, threshold: data, unavailable: false });
+      } catch {
+        if (!cancelled) setCoalLine({ key, req, threshold: null, unavailable: true });
+      }
     })();
     return () => { cancelled = true; };
   }, [issue?.neighborhood_id, issue?.id]);
@@ -717,11 +733,14 @@ export default function IssueDetail() {
         </View>
 
         {/* Coalition threshold — count is real (voice_count); threshold is the
-            per-neighborhood line from coalition_threshold() (RPC), falling back
-            to a flat 8 until it resolves. See CoalitionBar. */}
+            per-neighborhood line from coalition_threshold() (RPC). Until it
+            answers the bar shows a placeholder, and if it fails,
+            "unavailable"; never a made-up number. A moved issue still shows
+            as carried. See CoalitionBar. */}
         <CoalitionBar
           count={issue.voice_count || 0}
-          threshold={coalThreshold ?? 8}
+          threshold={coalReady ? coalLine.threshold : null}
+          thresholdUnavailable={coalReady && coalLine.unavailable}
           status={issue.status}
           council={issue.neighborhoods?.name ? `${issue.neighborhoods.name} Council` : "the council"}
         />
