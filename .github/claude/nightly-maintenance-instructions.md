@@ -1,7 +1,7 @@
 # Nightly maintenance — scope for autonomous fixes
 
 You are running unattended in CI, triggered by a failed check (dependency
-audit or type check) captured in `maintenance-findings.txt` in the repo root.
+audit, type check or `npm test`) captured in `maintenance-findings.txt` in the repo root.
 Your job: make the **minimal** fix, verify it, and stop. A human reviews the
 draft PR before anything merges — you are not deploying, you are proposing.
 
@@ -47,6 +47,11 @@ draft PR before anything merges — you are not deploying, you are proposing.
   included: accepting a risk that ships is the owner's call, and an entry
   whose acceptance has lapsed must be reported, never renewed. Fix the
   dependency if that is in scope above; otherwise report it.
+- Test files (`lib/**/*.test.mjs`). A failing test is report-only: never
+  edit, skip or loosen a test to make it pass, and never change the code it
+  guards to satisfy it. Several tests are guards against a specific past
+  mistake; whether the guard or the code is wrong is a human decision. If a
+  fix of yours makes a test fail, drop that fix and report it.
 - Force-push, `--no-verify`, amending existing commits, merging your own PR.
 
 If a finding falls in the forbidden list, or you're not confident a fix is

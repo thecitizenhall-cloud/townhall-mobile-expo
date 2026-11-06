@@ -1,6 +1,6 @@
 name: Nightly maintenance
 
-# Runs type-check + dependency audit; if either fails, asks Claude Code to
+# Runs type-check, tests and dependency audit; if any fails, asks Claude Code to
 # prepare a minimal fix on a new branch and open it as a DRAFT PR for human
 # review. Never merges, never touches lib/residency.ts or ZK screens, never
 # gets Supabase credentials — see
@@ -54,6 +54,13 @@ jobs:
             echo "type check FAILED" >> "$FINDINGS"; FAILED=1
           fi
 
+          # Unconditional, like the others: a green night is evidence the
+          # suite ran, not only a red one.
+          echo "## npm test" >> "$FINDINGS"
+          if ! npm test >> "$FINDINGS" 2>&1; then
+            echo "tests FAILED" >> "$FINDINGS"; FAILED=1
+          fi
+
           # Scoped gate, not a bare `npm audit --omit=dev`: the Expo/Metro/Babel
           # toolchain is reachable from production dependencies, so the bare
           # command could never pass and its failure said nothing. The script
@@ -99,7 +106,7 @@ jobs:
               --model claude-opus-5 \
               --effort high \
               --fallback-model claude-sonnet-5 \
-              --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
+              --allowedTools "Edit,Read,Bash(npm install),Bash(npx tsc*),Bash(npm test*),Bash(npm audit*),Bash(npm view*),Bash(git *)" \
               --output-format text \
               "Read the scope instructions and the findings above (piped via stdin) and prepare a fix per the instructions. Stop and do nothing if nothing in scope is safely fixable. End your reply with the PR body in the exact ## Found / ## Changed / ## Verification / ## Could not safely fix format from the instructions — that's what gets posted as the PR body verbatim." \
             | tee "$REPORT"
