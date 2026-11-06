@@ -9,11 +9,17 @@ import { supabase } from "../../lib/supabase";
 import { getCurrentUser } from "../../lib/sessionUser";
 import { reservedNameError, clipDisplayName, finalDisplayName } from "../../lib/displayName";
 import { goVerify, hasResidencyProof } from "../../lib/residency";
-import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
+import { useTheme, useStyles, useThemeMode, type Palette, type ThemePreference } from "../../lib/themeContext";
 import { municipalityForSlug } from "../../lib/townOf";
 import { timeAgo } from "../../lib/format";
 import { enableDevicePush, disableDevicePush, getDevicePushState, PushReason } from "../../lib/push";
 import { SITE_URL } from "../../lib/config";
+
+const APPEARANCE: { key: ThemePreference; label: string }[] = [
+  { key: "system", label: "System" },
+  { key: "light", label: "Light" },
+  { key: "dark", label: "Dark" },
+];
 
 type WeekStats = { read: number; watched: number; voted: number; responded: number };
 
@@ -62,6 +68,7 @@ const nextTier = (T: Palette, score: number) => TIERS(T).find((t) => t.pts > sco
 
 export default function ProfileScreen() {
   const T = useTheme();
+  const { preference, setPreference } = useThemeMode();
   const s = useStyles(makeStyles);
   // /tabs/profile?tab=tracker opens straight onto the Tracker tab (the old
   // standalone tracker destination, now folded into Me).
@@ -726,6 +733,23 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
 
+          <View style={s.section}>
+            <Text style={s.sectionLabel}>Appearance</Text>
+            <View style={s.segRow} accessibilityRole="radiogroup">
+              {APPEARANCE.map((o) => {
+                const on = preference === o.key;
+                return (
+                  <Pressable key={o.key} onPress={() => setPreference(o.key)}
+                    accessibilityRole="radio" accessibilityState={{ checked: on }}
+                    style={[s.seg, on && s.segOn]}>
+                    <Text style={[s.segText, on && s.segTextOn]}>{o.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={s.weekNote}>System follows your phone's setting.</Text>
+          </View>
+
           <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}><Text style={s.signOutText}>Sign out</Text></TouchableOpacity>
           <TouchableOpacity onPress={handleDeleteAccount}><Text style={s.deleteText}>Request account deletion</Text></TouchableOpacity>
         </ScrollView>
@@ -810,6 +834,11 @@ const makeStyles = (T: Palette) => StyleSheet.create({
   routeSaveBtnText: { color: T.bg, fontSize: 14, fontWeight: "700" },
   recentLabel: { color: T.creamFaint, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
 
+  segRow: { flexDirection: "row", gap: 6 },
+  seg: { flex: 1, borderWidth: 1, borderColor: T.border, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
+  segOn: { borderColor: T.amber, backgroundColor: T.amberLo },
+  segText: { color: T.creamDim, fontSize: 14 },
+  segTextOn: { color: T.cream, fontWeight: "600" },
   signOutBtn: { marginTop: 10, borderWidth: 1, borderColor: T.border, borderRadius: 10, padding: 14, alignItems: "center" },
   signOutText: { color: T.creamDim, fontSize: 14 },
   deleteText: { color: T.redHi, fontSize: 12, textAlign: "center", marginTop: 16 },
