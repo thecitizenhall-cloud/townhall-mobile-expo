@@ -47,7 +47,7 @@ import CivicPulse from "../../components/CivicPulse";
 import { useTheme, useStyles, type Palette } from "../../lib/themeContext";
 import { SITE_URL } from "../../lib/config";
 import { WebView } from "react-native-webview";
-import { WEB_DARK_JS } from "../../lib/webDark";
+import { useWebTheme } from "../../lib/useWebTheme";
 import CivicFeedItem from "../../components/CivicFeedItem";
 import PostCard from "../../components/PostCard";
 
@@ -205,6 +205,7 @@ export default function FeedScreen() {
   const [reportCoordSource, setReportCoordSource] = useState<"gps" | "geocode" | "pin" | null>(null);
   const [geocodingReport, setGeocodingReport] = useState(false);
   const reportMapRef = useRef<WebView>(null);
+  const webTheme = useWebTheme(reportMapRef);
   // The report form scrolls inside its own card, and nothing scrolls it to the
   // field being typed in. The description is its last field, below the map, so
   // on a short phone the keyboard covered it. Scroll to the end when it takes
@@ -1116,8 +1117,8 @@ export default function FeedScreen() {
                 ref={reportMapRef}
                 source={{ uri: `${SITE_URL}/map-picker?native=1` }}
                 style={s.map}
-                injectedJavaScriptBeforeContentLoaded={WEB_DARK_JS}
-                injectedJavaScript={WEB_DARK_JS}
+                injectedJavaScriptBeforeContentLoaded={webTheme}
+                injectedJavaScript={webTheme}
                 onMessage={(e) => {
                   try {
                     const m = JSON.parse(e.nativeEvent.data);
