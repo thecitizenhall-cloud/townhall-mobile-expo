@@ -698,7 +698,7 @@ export default function ProfileScreen() {
                 value={routeLink} onChangeText={setRouteLink}
                 onSubmitEditing={parseRouteLink}
                 autoCapitalize="none" autoCorrect={false}
-                placeholder="Paste a Google Maps or Waze link…" placeholderTextColor={T.creamFaint} maxLength={500} />
+                placeholder="Maps or Waze link…" placeholderTextColor={T.creamFaint} maxLength={500} />
               <Pressable onPress={parseRouteLink} disabled={!routeLink.trim() || routeLinkBusy} style={s.routeLinkBtn}>
                 <Text style={s.routeLinkBtnText}>{routeLinkBusy ? "Reading…" : "Add from link"}</Text>
               </Pressable>
@@ -709,7 +709,7 @@ export default function ProfileScreen() {
               <TextInput style={[s.nameInput, { textAlign: "left", flex: 1 }]}
                 value={newRoadInput} onChangeText={setNewRoadInput}
                 onSubmitEditing={addPendingRoad}
-                placeholder="Road name (e.g. Cedar Swamp Road)" placeholderTextColor={T.creamFaint} maxLength={80} />
+                placeholder="e.g. Cedar Swamp Road" placeholderTextColor={T.creamFaint} maxLength={80} />
               <Pressable onPress={addPendingRoad} disabled={!newRoadInput.trim()} style={s.routeAddBtn}>
                 <Text style={{ color: T.creamDim, fontSize: 13 }}>Add</Text>
               </Pressable>

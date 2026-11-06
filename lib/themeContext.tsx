@@ -8,7 +8,7 @@
 // device. System follows the phone's setting (app.json userInterfaceStyle
 // "automatic"); a phone with no dark mode, like Android 7, reads as light.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useColorScheme } from "react-native";
+import { Appearance, useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SystemUI from "expo-system-ui";
 import { T as DARK, LIGHT, byMode, type Palette } from "./theme";
@@ -36,8 +36,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // One gate for the provider's lifetime, so a tap made before the saved
   // value loads wins over it.
+  //
+  // Each choice is also handed to the native side, so things the app does
+  // not draw itself (Alert dialogs) match it. It runs before
+  // setPref so the render that follows reads the phone's own setting again
+  // when the choice goes back to System.
   const [gate] = useState(() =>
-    createPreferenceGate(setPref, (p) => AsyncStorage.setItem(STORAGE_KEY, p)));
+    createPreferenceGate(
+      (p) => {
+        Appearance.setColorScheme(p === "system" ? "unspecified" : p);
+        setPref(p);
+      },
+      (p) => AsyncStorage.setItem(STORAGE_KEY, p),
+    ));
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(gate.loaded).catch(() => {});
