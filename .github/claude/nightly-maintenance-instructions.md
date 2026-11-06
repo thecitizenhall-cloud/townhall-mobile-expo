@@ -51,7 +51,9 @@ draft PR before anything merges — you are not deploying, you are proposing.
   edit, skip or loosen a test to make it pass, and never change the code it
   guards to satisfy it. Several tests are guards against a specific past
   mistake; whether the guard or the code is wrong is a human decision. If a
-  fix of yours makes a test fail, drop that fix and report it.
+  fix of yours makes a test fail, drop that fix and report it. That includes
+  what selects and runs the tests: the `test` script in `package.json`, and
+  `npm test`'s arguments. Run it as plain `npm test`.
 - Force-push, `--no-verify`, amending existing commits, merging your own PR.
 
 If a finding falls in the forbidden list, or you're not confident a fix is
