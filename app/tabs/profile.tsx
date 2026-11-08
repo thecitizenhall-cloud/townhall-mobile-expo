@@ -688,7 +688,7 @@ export default function ProfileScreen() {
 
             <TextInput style={[s.nameInput, { textAlign: "left", marginTop: routes.length ? 14 : 0, marginBottom: 8 }]}
               value={newRouteName} onChangeText={setNewRouteName}
-              placeholder="Route name (e.g. Commute to work)" placeholderTextColor={T.creamFaint} maxLength={60} />
+              placeholder="Route name, e.g. Commute" placeholderTextColor={T.creamFaint} maxLength={60} />
 
             {/* Paste a Google Maps / Waze share link — pulls road names out
                 of it instead of typing each one. Calls web's server route
