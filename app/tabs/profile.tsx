@@ -688,7 +688,7 @@ export default function ProfileScreen() {
 
             <TextInput style={[s.nameInput, { textAlign: "left", marginTop: routes.length ? 14 : 0, marginBottom: 8 }]}
               value={newRouteName} onChangeText={setNewRouteName}
-              placeholder="Route name (e.g. Commute to work)" placeholderTextColor={T.creamFaint} maxLength={60} />
+              placeholder="Route name, e.g. Commute" placeholderTextColor={T.creamFaint} maxLength={60} />
 
             {/* Paste a Google Maps / Waze share link — pulls road names out
                 of it instead of typing each one. Calls web's server route
@@ -698,7 +698,7 @@ export default function ProfileScreen() {
                 value={routeLink} onChangeText={setRouteLink}
                 onSubmitEditing={parseRouteLink}
                 autoCapitalize="none" autoCorrect={false}
-                placeholder="Paste a Google Maps or Waze link…" placeholderTextColor={T.creamFaint} maxLength={500} />
+                placeholder="Maps or Waze link…" placeholderTextColor={T.creamFaint} maxLength={500} />
               <Pressable onPress={parseRouteLink} disabled={!routeLink.trim() || routeLinkBusy} style={s.routeLinkBtn}>
                 <Text style={s.routeLinkBtnText}>{routeLinkBusy ? "Reading…" : "Add from link"}</Text>
               </Pressable>
@@ -709,7 +709,7 @@ export default function ProfileScreen() {
               <TextInput style={[s.nameInput, { textAlign: "left", flex: 1 }]}
                 value={newRoadInput} onChangeText={setNewRoadInput}
                 onSubmitEditing={addPendingRoad}
-                placeholder="Road name (e.g. Cedar Swamp Road)" placeholderTextColor={T.creamFaint} maxLength={80} />
+                placeholder="e.g. Cedar Swamp Road" placeholderTextColor={T.creamFaint} maxLength={80} />
               <Pressable onPress={addPendingRoad} disabled={!newRoadInput.trim()} style={s.routeAddBtn}>
                 <Text style={{ color: T.creamDim, fontSize: 13 }}>Add</Text>
               </Pressable>
