@@ -508,9 +508,14 @@ export default function FeedScreen() {
     const authorName = post.profiles?.display_name || "Resident";
     const sourceLabel = post.author_id === currentUser.id
       ? `Escalated by ${escalatorName}` : `Escalated by ${escalatorName} · from a post by ${authorName}`;
+    // Issues are raised 'open'. The insert policy requires it, and 'escalated'
+    // was only ever reaching the database as 'open' because a BEFORE INSERT
+    // trigger rewrote it; sending it ourselves is what lets that trigger go.
+    // The escalation itself is carried by source_post_id and source_label, and
+    // the status moves on once the matter is actually before the council.
     const { data: issue, error } = await supabase.from("civic_issues").insert({
       source_post_id: post.id, neighborhood_id: profEsc?.neighborhood_id || null,
-      title, status: "escalated", voice_count: 0, priority_pct: 0, source_label: sourceLabel,
+      title, status: "open", voice_count: 0, priority_pct: 0, source_label: sourceLabel,
     }).select().single();
     if (error) {
       showToast(isStandingRefusal(error) ? "Verify your residency to escalate to the civic tracker." : "Couldn't escalate — please try again.");
