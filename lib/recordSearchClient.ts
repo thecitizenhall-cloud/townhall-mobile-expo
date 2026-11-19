@@ -54,7 +54,11 @@ export function buildRecordUrl(
 // Caps the length for the "is this the same query" check and the request. Not a
 // filter: the server's normalisation is the real one.
 export function clampQuery(q: string): string {
-  return q.replace(/\s+/g, " ").trim().slice(0, RECORD_QUERY_MAX);
+  const cut = q.replace(/\s+/g, " ").trim().slice(0, RECORD_QUERY_MAX);
+  // The server counts UTF-16 units (.length), so stay within the cap, but never
+  // end on half of a surrogate pair.
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 // What a resident is told. The server's own error text is never shown: it is
@@ -135,6 +139,10 @@ export class RecordSearch {
     if (!s.loaded || !s.hasMore || s.nextOffset === null) return Promise.resolve();
     // onEndReached can fire twice before a render: one page, one request.
     if (s.status === "loading" || s.status === "loadingMore") return Promise.resolve();
+    // After a failure only retry() may ask again. The list's onEndReached
+    // refires when the footer changes height, so without this a failed page
+    // would request itself in a loop.
+    if (s.status === "error") return Promise.resolve();
     const mine = ++this.gen;
     this.abort?.abort();
     this.abort = new AbortController();
