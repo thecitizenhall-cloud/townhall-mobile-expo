@@ -63,6 +63,10 @@ function RootStack() {
           options={{ title: "Civic map" }}
         />
         <Stack.Screen
+          name="record"
+          options={{ title: "Town record" }}
+        />
+        <Stack.Screen
           name="card/[id]"
           options={{ title: "Concern", presentation: "card" }}
         />
