@@ -510,9 +510,12 @@ export default function FeedScreen() {
       ? `Escalated by ${escalatorName}` : `Escalated by ${escalatorName} · from a post by ${authorName}`;
     // Issues are raised 'open'. The insert policy requires it, and 'escalated'
     // was only ever reaching the database as 'open' because a BEFORE INSERT
-    // trigger rewrote it; sending it ourselves is what lets that trigger go.
-    // The escalation itself is carried by source_post_id and source_label, and
-    // the status moves on once the matter is actually before the council.
+    // trigger rewrote it. Builds released before this change still send
+    // 'escalated' and there is no over-the-air update, so that trigger has to
+    // stay while those builds are installed.
+    // The escalation itself is carried by source_post_id and source_label.
+    // 'escalated' is set by the server, when the issue crosses its coalition
+    // threshold, never by a client.
     const { data: issue, error } = await supabase.from("civic_issues").insert({
       source_post_id: post.id, neighborhood_id: profEsc?.neighborhood_id || null,
       title, status: "open", voice_count: 0, priority_pct: 0, source_label: sourceLabel,
