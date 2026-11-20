@@ -919,6 +919,12 @@ export default function FeedScreen() {
                 <Pressable onPress={() => setFilter("record")} accessibilityRole="button" style={s.recordLink}>
                   <Text style={s.recordLinkText}>Browse the complete town record →</Text>
                 </Pressable>
+                {townId && (
+                  <Pressable onPress={() => router.push({ pathname: "/record" as any, params: { town: townId } })}
+                    accessibilityRole="button" style={s.recordLink}>
+                    <Text style={s.recordLinkText}>Search the town record →</Text>
+                  </Pressable>
+                )}
                 <View style={s.exploreTools}>
                   <Pressable onPress={() => router.push({ pathname: "/map" as any, params: townId ? { muni: townId } : {} })}
                     accessibilityRole="button" accessibilityLabel={`Open ${neighborhood} civic map`} style={s.exploreTool}>
