@@ -24,11 +24,18 @@ export type EntryDeps = {
   // A profile read. `profile` is null when the row does not exist; `error` is
   // set when the read itself failed and the answer is unknown.
   getProfile: (userId: string) => Promise<{ profile: EntryProfile; error: unknown }>;
+  // Resolves when any sign-out still running has finished.
+  signOutSettled?: () => Promise<unknown> | undefined;
 };
 
 export const ENTRY_TIMEOUT_MS = 10_000;
 
 async function decide(deps: EntryDeps): Promise<EntryRoute> {
+  // A sign-out from the can't-connect screen can time out and still finish
+  // later. Wait for it, so nobody is sent to the feed and then signed out
+  // underneath it. If it never settles, the timeout answers "unreachable".
+  await deps.signOutSettled?.();
+
   const userId = await deps.getUserId();
   if (!userId) return "/auth/login";
 
@@ -56,13 +63,17 @@ export function resolveEntry(deps: EntryDeps, timeoutMs: number = ENTRY_TIMEOUT_
   return Promise.race([decided, timeout]).finally(() => clearTimeout(timer));
 }
 
+// Sign-outs that have not finished, including ones signOutHere gave up on.
+const signOuts = new WeakMap<SupabaseClient, Promise<unknown>>();
+
 // The real reads.
 export function entryDeps(client: SupabaseClient): EntryDeps {
   return {
+    signOutSettled: () => signOuts.get(client),
     // With an expired token and no network, getSession returns session: null
     // WITH an error while the session stays in storage. That is "we don't
-    // know", not "signed out". A revoked refresh token also errors once, then
-    // the session is gone and the next attempt correctly reaches login.
+    // know", not "signed out". A revoked refresh token is different: the client
+    // clears the session as it starts, so this reads as no session: login.
     getUserId: async () => {
       const { data, error } = await client.auth.getSession();
       if (error) throw error;
@@ -93,5 +104,9 @@ export async function signOutHere(client: SupabaseClient, timeoutMs: number = EN
     timer = setTimeout(() => resolve(false), timeoutMs);
   });
   const signedOut = client.auth.signOut({ scope: "local" }).then(({ error }) => !error, () => false);
+  const tracked = signedOut.finally(() => {
+    if (signOuts.get(client) === tracked) signOuts.delete(client);
+  });
+  signOuts.set(client, tracked);
   return Promise.race([signedOut, timeout]).finally(() => clearTimeout(timer));
 }
