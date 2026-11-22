@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
-import { View, Text, Pressable, ActivityIndicator } from "react-native";
+import { AccessibilityInfo, View, Text, Pressable, ActivityIndicator } from "react-native";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../lib/themeContext";
 import { entryDeps, resolveEntry, signOutHere } from "../lib/entryRoute";
@@ -28,38 +28,49 @@ export default function Index() {
   const signOut = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
+    // Back to the spinner while it runs, so neither button sits there dead.
+    setUnreachable(false);
     setSignOutFailed(false);
     const ok = await signOutHere(supabase);
     busy.current = false;
-    if (ok) router.replace("/auth/login");
-    else setSignOutFailed(true);
+    if (ok) {
+      router.replace("/auth/login");
+    } else {
+      setSignOutFailed(true);
+      setUnreachable(true);
+    }
   }, []);
 
   useEffect(() => { route(); }, [route]);
+
+  const message = signOutFailed
+    ? "Signing out needs a connection. Check yours and try again."
+    : "We couldn't reach Townhall. Check your connection and try again.";
+
+  // Announced rather than a live region: this text appears by mounting, which
+  // a live region does not report, and live regions are Android only.
+  useEffect(() => {
+    if (unreachable) AccessibilityInfo.announceForAccessibility(message);
+  }, [unreachable, message]);
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg, justifyContent: "center", alignItems: "center", padding: 32 }}>
       {unreachable ? (
         <>
-          <Text
-            accessibilityLiveRegion="polite"
-            style={{ color: T.cream, fontSize: 15, lineHeight: 22, textAlign: "center", marginBottom: 16 }}
-          >
-            {signOutFailed
-              ? "Signing out needs a connection. Check yours and try again."
-              : "We couldn't reach Townhall. Check your connection and try again."}
+          <Text style={{ color: T.cream, fontSize: 15, lineHeight: 22, textAlign: "center", marginBottom: 16 }}>
+            {message}
           </Text>
           <Pressable
             onPress={route}
             accessibilityRole="button"
-            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 20, borderRadius: 8, borderWidth: 1, borderColor: T.amberMid, backgroundColor: T.amberLo }}
+            style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 20, borderRadius: 8, borderWidth: 1, borderColor: T.amberMid, backgroundColor: T.amberLo }}
           >
             <Text style={{ color: T.amberHi, fontSize: 14, fontWeight: "500" }}>Try again</Text>
           </Pressable>
           <Pressable
             onPress={signOut}
             accessibilityRole="button"
-            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 20, marginTop: 8 }}
+            style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 20, marginTop: 8 }}
           >
             <Text style={{ color: T.creamDim, fontSize: 13 }}>Sign out</Text>
           </Pressable>

@@ -85,12 +85,13 @@ export function entryDeps(client: SupabaseClient): EntryDeps {
 // The way out when Try again keeps failing though the server answers, such as
 // a rejected token. Local scope: other devices stay signed in. Returns false
 // if it could not sign out, which is the case with no connection, so a
-// resident on bad signal cannot lose their session from this screen.
-export async function signOutHere(client: SupabaseClient): Promise<boolean> {
-  try {
-    const { error } = await client.auth.signOut({ scope: "local" });
-    return !error;
-  } catch {
-    return false;
-  }
+// resident on bad signal cannot lose their session from this screen. Bounded
+// like the launch read: offline, auth-js can take 25s or more to give up.
+export async function signOutHere(client: SupabaseClient, timeoutMs: number = ENTRY_TIMEOUT_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const signedOut = client.auth.signOut({ scope: "local" }).then(({ error }) => !error, () => false);
+  return Promise.race([signedOut, timeout]).finally(() => clearTimeout(timer));
 }
