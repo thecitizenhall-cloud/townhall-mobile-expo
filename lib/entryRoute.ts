@@ -24,18 +24,11 @@ export type EntryDeps = {
   // A profile read. `profile` is null when the row does not exist; `error` is
   // set when the read itself failed and the answer is unknown.
   getProfile: (userId: string) => Promise<{ profile: EntryProfile; error: unknown }>;
-  // Resolves when any sign-out still running has finished.
-  signOutSettled?: () => Promise<unknown> | undefined;
 };
 
 export const ENTRY_TIMEOUT_MS = 10_000;
 
 async function decide(deps: EntryDeps): Promise<EntryRoute> {
-  // A sign-out from the can't-connect screen can time out and still finish
-  // later. Wait for it, so nobody is sent to the feed and then signed out
-  // underneath it. If it never settles, the timeout answers "unreachable".
-  await deps.signOutSettled?.();
-
   const userId = await deps.getUserId();
   if (!userId) return "/auth/login";
 
@@ -63,13 +56,9 @@ export function resolveEntry(deps: EntryDeps, timeoutMs: number = ENTRY_TIMEOUT_
   return Promise.race([decided, timeout]).finally(() => clearTimeout(timer));
 }
 
-// Sign-outs that have not finished, including ones signOutHere gave up on.
-const signOuts = new WeakMap<SupabaseClient, Promise<unknown>>();
-
 // The real reads.
 export function entryDeps(client: SupabaseClient): EntryDeps {
   return {
-    signOutSettled: () => signOuts.get(client),
     // With an expired token and no network, getSession returns session: null
     // WITH an error while the session stays in storage. That is "we don't
     // know", not "signed out". A revoked refresh token is different: the client
@@ -91,22 +80,4 @@ export function entryDeps(client: SupabaseClient): EntryDeps {
       return { profile: data, error };
     },
   };
-}
-
-// The way out when Try again keeps failing though the server answers, such as
-// a rejected token. Local scope: other devices stay signed in. Returns false
-// if it could not sign out, which is the case with no connection, so a
-// resident on bad signal cannot lose their session from this screen. Bounded
-// like the launch read: offline, auth-js can take 25s or more to give up.
-export async function signOutHere(client: SupabaseClient, timeoutMs: number = ENTRY_TIMEOUT_MS): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => resolve(false), timeoutMs);
-  });
-  const signedOut = client.auth.signOut({ scope: "local" }).then(({ error }) => !error, () => false);
-  const tracked = signedOut.finally(() => {
-    if (signOuts.get(client) === tracked) signOuts.delete(client);
-  });
-  signOuts.set(client, tracked);
-  return Promise.race([signedOut, timeout]).finally(() => clearTimeout(timer));
 }
